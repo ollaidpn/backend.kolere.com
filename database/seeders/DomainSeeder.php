@@ -7,13 +7,23 @@ use Illuminate\Database\Seeder;
 
 class DomainSeeder extends Seeder
 {
-    /**
-     * Run the database seeds.
-     */
     public function run(): void
     {
-        Domain::factory()
-            ->count(5)
-            ->create();
+        $domains = [
+            'Couture',
+            'Pharmacie',
+            'Alimentation',
+            'Electronique',
+            'Cosmétique',
+            'Restaurant',
+            'Supermarché',
+            'Quincaillerie',
+            'Librairie',
+            'Autre',
+        ];
+
+        foreach ($domains as $name) {
+            Domain::firstOrCreate(['name' => $name]);
+        }
     }
 }

@@ -20,6 +20,9 @@ class Entity extends Model
         'address',
         'town',
         'country',
+        'email',
+        'ccphone',
+        'phone',
     ];
 
     protected $searchableFields = ['*'];

@@ -6,23 +6,27 @@ use App\Models\Scopes\Searchable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 
-class Link extends Model
+class Invitation extends Model
 {
     use HasFactory;
     use Searchable;
 
-    protected $fillable = ['manager_id', 'entity_id', 'is_admin'];
-
-    protected $casts = [
-        'is_admin' => 'boolean',
+    protected $fillable = [
+        'entity_id',
+        'email',
+        'name',
+        'ccphone',
+        'phone',
+        'token',
+        'status',
+        'is_admin',
     ];
 
     protected $searchableFields = ['*'];
 
-    public function manager()
-    {
-        return $this->belongsTo(Manager::class);
-    }
+    protected $casts = [
+        'is_admin' => 'boolean',
+    ];
 
     public function entity()
     {
