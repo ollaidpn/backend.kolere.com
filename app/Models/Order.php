@@ -24,6 +24,7 @@ class Order extends Model
         'discount',
         'total',
         'discount_id',
+        'prescription_photo',
     ];
 
     protected $casts = [

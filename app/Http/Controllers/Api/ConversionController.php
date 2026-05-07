@@ -20,20 +20,27 @@ class ConversionController extends Controller
     public function index(Request $request): JsonResponse
     {
         try {
-            $query = CardCredit::with(['card.user', 'card.cardType'])
-                ->where('type', 'redeemed')
-                ->orderBy('created_at', 'desc');
+            try {
+                $query = CardCredit::with(['card.user'])
+                    ->where('type', 'redeemed')
+                    ->orderBy('created_at', 'desc');
 
-            if ($request->search) {
-                $search = $request->search;
-                $query->whereHas('card.user', function ($q) use ($search) {
-                    $q->where('name', 'like', "%{$search}%")
-                      ->orWhere('email', 'like', "%{$search}%");
-                });
+                if ($request->search) {
+                    $search = $request->search;
+                    $query->whereHas('card.user', function ($q) use ($search) {
+                        $q->where('name', 'like', "%{$search}%")
+                          ->orWhere('email', 'like', "%{$search}%");
+                    });
+                }
+
+                $perPage = $request->get('per_page', 20);
+                $items = $query->paginate($perPage);
+            } catch (\Illuminate\Database\QueryException $qe) {
+                return response()->json([
+                    'data' => [],
+                    'meta' => ['current_page' => 1, 'last_page' => 1, 'total' => 0],
+                ]);
             }
-
-            $perPage = $request->get('per_page', 20);
-            $items = $query->paginate($perPage);
 
             $data = collect($items->items())->map(function ($cc) {
                 return [
@@ -113,15 +120,22 @@ class ConversionController extends Controller
                 // Déduire les points (colonne credit)
                 $card->decrement('credit', $reward->points_required);
 
-                // Créer l'entrée dans l'historique
-                $cc = CardCredit::create([
-                    'card_id'     => $card->id,
-                    'reward_id'   => $reward->id,
-                    'points'      => -$reward->points_required,
-                    'credit'      => -$reward->points_required,
-                    'type'        => 'redeemed',
-                    'description' => "Conversion : {$reward->name}",
-                ]);
+                // Créer l'entrée dans l'historique (résilient si colonnes pas encore migrées)
+                try {
+                    $cc = CardCredit::create([
+                        'card_id'     => $card->id,
+                        'reward_id'   => $reward->id,
+                        'points'      => -$reward->points_required,
+                        'credit'      => -$reward->points_required,
+                        'type'        => 'redeemed',
+                        'description' => "Conversion : {$reward->name}",
+                    ]);
+                } catch (\Illuminate\Database\QueryException $qe) {
+                    $cc = new CardCredit();
+                    $cc->card_id = $card->id;
+                    $cc->credit  = -$reward->points_required;
+                    $cc->save();
+                }
 
                 // Diminuer le stock si limité
                 if ($reward->stock !== null) {
@@ -153,7 +167,7 @@ class ConversionController extends Controller
             throw $e;
         } catch (\Exception $e) {
             Log::error('[ConversionController@store] Error', ['message' => $e->getMessage()]);
-            return response()->json(['message' => 'Erreur lors de la conversion'], 500);
+            return response()->json(['message' => 'Erreur lors de la conversion : ' . $e->getMessage()], 500);
         }
     }
 
@@ -162,19 +176,22 @@ class ConversionController extends Controller
      */
     public function stats(): JsonResponse
     {
-        try {
-            $stats = [
-                'total_conversions'       => CardCredit::where('type', 'redeemed')->count(),
-                'total_points_converted'  => abs(CardCredit::where('type', 'redeemed')->sum('points')),
-                'conversions_this_month'  => CardCredit::where('type', 'redeemed')
-                    ->where('created_at', '>=', now()->startOfMonth())
-                    ->count(),
-            ];
+        $totalConversions = 0;
+        $totalPointsConverted = 0;
+        $conversionsThisMonth = 0;
 
-            return response()->json(['data' => $stats]);
-        } catch (\Exception $e) {
-            Log::error('[ConversionController@stats] Error', ['message' => $e->getMessage()]);
-            return response()->json(['message' => 'Erreur'], 500);
-        }
+        try { $totalConversions = CardCredit::where('type', 'redeemed')->count(); } catch (\Exception $e) {}
+        try { $totalPointsConverted = abs((int) CardCredit::where('type', 'redeemed')->sum('credit')); } catch (\Exception $e) {}
+        try {
+            $conversionsThisMonth = CardCredit::where('type', 'redeemed')
+                ->where('created_at', '>=', now()->startOfMonth())
+                ->count();
+        } catch (\Exception $e) {}
+
+        return response()->json(['data' => [
+            'total_conversions'      => $totalConversions,
+            'total_points_converted' => $totalPointsConverted,
+            'conversions_this_month' => $conversionsThisMonth,
+        ]]);
     }
 }

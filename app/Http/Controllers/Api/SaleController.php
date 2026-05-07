@@ -11,6 +11,7 @@ use Illuminate\Http\JsonResponse;
 use App\Http\Controllers\Controller;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 
 class SaleController extends Controller
@@ -18,34 +19,30 @@ class SaleController extends Controller
     public function index(Request $request): JsonResponse
     {
         try {
-            $query = Order::with(['user', 'card', 'discounts']);
-            
-            // Filtrer par date
-            if ($request->date_from) {
-                $query->whereDate('created_at', '>=', $request->date_from);
+            $query = Order::with(['user', 'card']);
+
+            if ($request->search) {
+                $search = $request->search;
+                $query->where(function ($q) use ($search) {
+                    $q->where('reference', 'like', "%{$search}%")
+                      ->orWhereHas('user', function ($u) use ($search) {
+                          $u->where('name', 'like', "%{$search}%")
+                            ->orWhere('email', 'like', "%{$search}%");
+                      });
+                });
             }
-            if ($request->date_to) {
-                $query->whereDate('created_at', '<=', $request->date_to);
-            }
-            
-            // Filtrer par client
-            if ($request->client_id) {
-                $query->where('user_id', $request->client_id);
-            }
-            
-            // Pagination
+
             $perPage = $request->get('per_page', 15);
-            $sales = $query->orderBy('created_at', 'desc')
-                           ->paginate($perPage);
+            $sales = $query->orderBy('created_at', 'desc')->paginate($perPage);
 
             return response()->json([
                 'data' => $sales->items(),
                 'meta' => [
                     'current_page' => $sales->currentPage(),
-                    'last_page' => $sales->lastPage(),
-                    'per_page' => $sales->perPage(),
-                    'total' => $sales->total(),
-                ]
+                    'last_page'    => $sales->lastPage(),
+                    'per_page'     => $sales->perPage(),
+                    'total'        => $sales->total(),
+                ],
             ]);
         } catch (\Exception $e) {
             Log::error('[SaleController@index] Error', ['message' => $e->getMessage()]);
@@ -56,80 +53,102 @@ class SaleController extends Controller
     public function store(Request $request): JsonResponse
     {
         try {
+            // Si envoyé en multipart/form-data, items arrive comme chaîne JSON
+            if (is_string($request->items)) {
+                $request->merge(['items' => json_decode($request->items, true) ?? []]);
+            }
+
             $validated = $request->validate([
-                'client_id' => 'required|exists:users,id',
-                'amount' => 'required|numeric|min:0',
-                'items' => 'required|array|min:1',
-                'items.*.name' => 'required|string|max:255',
+                'client_id'   => 'required|exists:users,id',
+                'amount'      => 'required|numeric|min:0.01',
+                'description' => 'nullable|string|max:500',
+                'items'       => 'required|array|min:1',
+                'items.*.name'     => 'required|string|max:255',
                 'items.*.quantity' => 'required|integer|min:1',
-                'items.*.price' => 'required|numeric|min:0',
-                'discount_code' => 'nullable|string|max:50',
+                'items.*.price'    => 'required|numeric|min:0',
+                'prescription' => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:5120',
             ]);
 
-            return DB::transaction(function () use ($validated) {
-                // Récupérer le client et sa carte
+            return DB::transaction(function () use ($validated, $request) {
                 $client = User::findOrFail($validated['client_id']);
-                $card = $client->card;
-                
+                $card   = $client->card;
+
                 if (!$card) {
                     throw ValidationException::withMessages([
-                        'client_id' => ['Ce client n\'a pas de carte de fidélité']
+                        'client_id' => ['Ce client n\'a pas de carte de fidélité'],
                     ]);
                 }
 
-                // Calculer les points (1000 FCFA = 1 point)
-                $pointsEarned = floor($validated['amount'] / 1000);
+                // Points : 1 point par 1000 FCFA
+                $pointsEarned = (int) floor($validated['amount'] / 1000);
 
-                // Créer la commande
+                // Stocker l'ordonnance si fournie
+                $prescriptionPath = null;
+                if ($request->hasFile('prescription')) {
+                    $prescriptionPath = $request->file('prescription')->store('prescriptions', 'public');
+                }
+
                 $order = Order::create([
-                    'user_id' => $client->id,
-                    'card_id' => $card->id,
-                    'amount' => $validated['amount'],
-                    'items' => json_encode($validated['items']),
-                    'points_earned' => $pointsEarned,
-                    'status' => 'completed',
-                    'reference' => 'SALE-' . date('YmdHis') . '-' . rand(1000, 9999),
+                    'user_id'          => $client->id,
+                    'card_id'          => $card->id,
+                    'reference'        => 'SALE-' . date('YmdHis') . '-' . rand(1000, 9999),
+                    'name'             => 'Achat Pharmacie',
+                    'description'      => $validated['description'] ?? null,
+                    'items'            => $validated['items'],
+                    'amount'           => $validated['amount'],
+                    'price'            => $validated['amount'],
+                    'discount'         => 0,
+                    'total'            => $validated['amount'],
+                    'points_earned'    => $pointsEarned,
+                    'status'           => 'completed',
+                    'prescription_photo' => $prescriptionPath,
                 ]);
 
-                // Ajouter les points à la carte (colonne credit)
+                // Ajouter les points à la carte
                 $card->increment('credit', $pointsEarned);
 
-                // Créer un crédit de points pour l'historique
-                CardCredit::create([
-                    'card_id' => $card->id,
-                    'order_id' => $order->id,
-                    'points' => $pointsEarned,
-                    'credit' => $pointsEarned,
-                    'type' => 'earned',
-                    'description' => "Points gagnés - Vente {$order->reference}",
-                ]);
+                // Historique de points (résilient si colonnes pas encore migrées)
+                try {
+                    CardCredit::create([
+                        'card_id'     => $card->id,
+                        'order_id'    => $order->id,
+                        'points'      => $pointsEarned,
+                        'credit'      => $pointsEarned,
+                        'type'        => 'earned',
+                        'description' => "Points gagnés — {$order->reference}",
+                    ]);
+                } catch (\Illuminate\Database\QueryException $qe) {
+                    $cc = new CardCredit();
+                    $cc->card_id  = $card->id;
+                    $cc->order_id = $order->id;
+                    $cc->credit   = $pointsEarned;
+                    $cc->save();
+                }
 
                 Log::info('[SaleController@store] Sale created', [
-                    'order_id' => $order->id,
+                    'order_id'  => $order->id,
                     'client_id' => $client->id,
-                    'amount' => $validated['amount'],
-                    'points_earned' => $pointsEarned
+                    'amount'    => $validated['amount'],
+                    'points'    => $pointsEarned,
                 ]);
 
                 return response()->json([
                     'message' => 'Vente enregistrée avec succès',
-                    'data' => $order->load(['user', 'card'])
+                    'data'    => $order->load(['user']),
                 ], 201);
             });
         } catch (ValidationException $e) {
             throw $e;
         } catch (\Exception $e) {
             Log::error('[SaleController@store] Error', ['message' => $e->getMessage()]);
-            return response()->json(['message' => 'Erreur lors de l\'enregistrement de la vente'], 500);
+            return response()->json(['message' => 'Erreur lors de l\'enregistrement de la vente : ' . $e->getMessage()], 500);
         }
     }
 
     public function show($id): JsonResponse
     {
         try {
-            $sale = Order::with(['user', 'card', 'discounts', 'cardCredits'])
-                        ->findOrFail($id);
-            
+            $sale = Order::with(['user', 'card'])->findOrFail($id);
             return response()->json(['data' => $sale]);
         } catch (\Exception $e) {
             Log::error('[SaleController@show] Error', ['id' => $id, 'message' => $e->getMessage()]);
@@ -140,17 +159,17 @@ class SaleController extends Controller
     public function getStats(): JsonResponse
     {
         try {
-            $today = now()->format('Y-m-d');
+            $today     = now()->format('Y-m-d');
             $thisMonth = now()->startOfMonth();
-            
+
             $stats = [
-                'today_sales' => Order::whereDate('created_at', $today)->sum('amount'),
-                'today_sales_count' => Order::whereDate('created_at', $today)->count(),
-                'this_month_sales' => Order::where('created_at', '>=', $thisMonth)->sum('amount'),
-                'this_month_sales_count' => Order::where('created_at', '>=', $thisMonth)->count(),
-                'total_points_distributed' => Order::sum('points_earned'),
-                'total_sales' => Order::sum('amount'),
-                'total_sales_count' => Order::count(),
+                'today_sales'              => (float) Order::whereDate('created_at', $today)->sum('amount'),
+                'today_sales_count'        => Order::whereDate('created_at', $today)->count(),
+                'this_month_sales'         => (float) Order::where('created_at', '>=', $thisMonth)->sum('amount'),
+                'this_month_sales_count'   => Order::where('created_at', '>=', $thisMonth)->count(),
+                'total_points_distributed' => (int) Order::sum('points_earned'),
+                'total_sales'              => (float) Order::sum('amount'),
+                'total_sales_count'        => Order::count(),
             ];
 
             return response()->json(['data' => $stats]);
@@ -164,14 +183,15 @@ class SaleController extends Controller
     {
         try {
             $recentSales = Order::with(['user'])
-                               ->orderBy('created_at', 'desc')
-                               ->limit(10)
-                               ->get();
+                ->orderBy('created_at', 'desc')
+                ->limit(10)
+                ->get();
 
             return response()->json(['data' => $recentSales]);
         } catch (\Exception $e) {
+            // Retourner un tableau vide plutôt qu'un 500
             Log::error('[SaleController@getRecentSales] Error', ['message' => $e->getMessage()]);
-            return response()->json(['message' => 'Erreur lors du chargement des ventes récentes'], 500);
+            return response()->json(['data' => []]);
         }
     }
 }

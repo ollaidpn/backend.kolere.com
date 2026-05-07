@@ -79,11 +79,11 @@ class BackofficeDashboardController extends Controller
                 ];
             }
 
-            // Distribution des clients par tranche de points
+            // Distribution des clients par tranche de points (colonne réelle = credit)
             $clientDistribution = [
-                'bronze' => Card::where('points', '<', 500)->count(),
-                'silver' => Card::whereBetween('points', [500, 1499])->count(),
-                'gold' => Card::where('points', '>=', 1500)->count(),
+                'bronze' => Card::where('credit', '<', 500)->count(),
+                'silver' => Card::whereBetween('credit', [500, 1499])->count(),
+                'gold' => Card::where('credit', '>=', 1500)->count(),
             ];
 
             $stats = [
@@ -102,7 +102,8 @@ class BackofficeDashboardController extends Controller
                 'today' => [
                     'sales' => $todaySales,
                     'sales_count' => $todaySalesCount,
-                    'growth_vs_last_month' => $growthVsLastMonth,
+                    'growth_vs_last_month' => $lastMonthSales > 0 ?
+                        round(($todaySales - ($lastMonthSales / 30)) / ($lastMonthSales / 30) * 100, 2) : 0,
                 ],
 
                 // Ce mois
@@ -110,8 +111,8 @@ class BackofficeDashboardController extends Controller
                     'sales' => $thisMonthSales,
                     'sales_count' => $thisMonthSalesCount,
                     'points_earned' => $pointsEarnedThisMonth,
-                    'growth_vs_last_month' => $lastMonthSales > 0 ? 
-                        round((($thisMonthSales - $lastMonthSales) / $lastMonthSales * 100, 2) : 0,
+                    'growth_vs_last_month' => $lastMonthSales > 0 ?
+                        round(($thisMonthSales - $lastMonthSales) / $lastMonthSales * 100, 2) : 0,
                 ],
 
                 // Moyennes
@@ -143,20 +144,28 @@ class BackofficeDashboardController extends Controller
 
     public function getQuickStats(): JsonResponse
     {
-        try {
-            $today = Carbon::today();
-            
-            $stats = [
-                'clients_fidelises' => User::whereHas('card')->count(),
-                'ventes_du_jour' => Order::whereDate('created_at', $today)->sum('amount'),
-                'points_distribues' => Card::sum('credit'),
-                'promotions_actives' => 0,
-            ];
+        $today = Carbon::today();
 
-            return response()->json(['data' => $stats]);
-        } catch (\Exception $e) {
-            Log::error('[BackofficeDashboardController@getQuickStats] Error', ['message' => $e->getMessage()]);
-            return response()->json(['message' => 'Erreur lors du chargement des statistiques'], 500);
+        // Chaque compteur est isolé — une erreur n'en bloque pas les autres
+        $clientsFidelises = 0;
+        $ventesDuJour     = 0;
+        $pointsDistribues = 0;
+
+        try { $clientsFidelises = User::whereHas('card')->count(); } catch (\Exception $e) {
+            Log::error('[getQuickStats] clients_fidelises', ['msg' => $e->getMessage()]);
         }
+        try { $ventesDuJour = (float) Order::whereDate('created_at', $today)->sum('amount'); } catch (\Exception $e) {
+            Log::error('[getQuickStats] ventes_du_jour', ['msg' => $e->getMessage()]);
+        }
+        try { $pointsDistribues = (int) Card::sum('credit'); } catch (\Exception $e) {
+            Log::error('[getQuickStats] points_distribues', ['msg' => $e->getMessage()]);
+        }
+
+        return response()->json(['data' => [
+            'clients_fidelises' => $clientsFidelises,
+            'ventes_du_jour'    => $ventesDuJour,
+            'points_distribues' => $pointsDistribues,
+            'promotions_actives' => 0,
+        ]]);
     }
 }
