@@ -22,6 +22,7 @@ use App\Http\Controllers\Api\ClientPointsController;
 use App\Http\Controllers\Api\ClientPromotionsController;
 use App\Http\Controllers\Api\ClientProfileController;
 use App\Http\Controllers\Api\RewardController;
+use App\Http\Controllers\Api\ConversionController;
 
 /*
 |--------------------------------------------------------------------------
@@ -129,6 +130,11 @@ Route::prefix('backoffice')->middleware('auth:sanctum')->group(function () {
     Route::get('/cards/{id}/history', [CardController::class, 'getHistory']);
     Route::put('/cards/{id}/add-points', [CardController::class, 'addPoints']);
     Route::put('/cards/{id}/redeem-points', [CardController::class, 'redeemPoints']);
+
+    // Conversions (échange de points)
+    Route::get('/conversions/stats', [ConversionController::class, 'stats']);
+    Route::get('/conversions', [ConversionController::class, 'index']);
+    Route::post('/conversions', [ConversionController::class, 'store']);
 
     // Récompenses
     Route::get('/rewards', [RewardController::class, 'index']);
