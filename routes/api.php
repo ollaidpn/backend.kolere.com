@@ -120,6 +120,7 @@ Route::prefix('backoffice')->middleware('auth:sanctum')->group(function () {
     Route::get('/sales/{id}', [SaleController::class, 'show']);
 
     // Cartes de fidélité
+    Route::get('/cards/scan/{reference}', [CardController::class, 'scanByReference']);
     Route::get('/cards/stats', [CardController::class, 'getStats']);
     Route::get('/cards', [CardController::class, 'index']);
     Route::post('/cards', [CardController::class, 'store']);

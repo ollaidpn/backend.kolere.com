@@ -31,6 +31,11 @@ class User extends Authenticatable
         return $this->hasMany(Card::class);
     }
 
+    public function card()
+    {
+        return $this->hasOne(Card::class)->latestOfMany();
+    }
+
     public function isSuperAdmin(): bool
     {
         return in_array($this->email, config('auth.super_admins'));

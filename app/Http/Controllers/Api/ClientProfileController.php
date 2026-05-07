@@ -43,6 +43,7 @@ class ClientProfileController extends Controller
             if ($profileData->card) {
                 $profile['loyalty_card'] = [
                     'id' => $profileData->card->id,
+                    'reference' => $profileData->card->reference,
                     'points' => $profileData->card->points,
                     'status' => $profileData->card->status,
                     'created_at' => $profileData->card->created_at,

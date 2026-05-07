@@ -34,8 +34,15 @@ class ClientController extends Controller
                            ->orderBy('created_at', 'desc')
                            ->paginate($perPage);
 
+            $items = collect($clients->items())->map(function ($client) {
+                $client->points = $client->card ? $client->card->credit : 0;
+                $client->card_reference = $client->card ? $client->card->reference : null;
+                $client->card_status = $client->card ? $client->card->status : 'inactive';
+                return $client;
+            });
+
             return response()->json([
-                'data' => $clients->items(),
+                'data' => $items,
                 'meta' => [
                     'current_page' => $clients->currentPage(),
                     'last_page' => $clients->lastPage(),

@@ -12,6 +12,7 @@ class Card extends Model
     use Searchable;
 
     protected $fillable = [
+        'reference',
         'status',
         'entity_id',
         'user_id',
@@ -22,6 +23,29 @@ class Card extends Model
     ];
 
     protected $searchableFields = ['*'];
+
+    protected $appends = ['points'];
+
+    protected static function boot()
+    {
+        parent::boot();
+
+        static::creating(function ($card) {
+            if (!$card->reference) {
+                do {
+                    $ref = 'KOL-' . date('Y') . '-' . strtoupper(substr(uniqid(), -5));
+                } while (static::where('reference', $ref)->exists());
+
+                $card->reference = $ref;
+            }
+        });
+    }
+
+    // Alias: points = credit
+    public function getPointsAttribute(): int
+    {
+        return (int) ($this->credit ?? 0);
+    }
 
     public function entity()
     {

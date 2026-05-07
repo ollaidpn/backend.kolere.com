@@ -12,17 +12,35 @@ class Order extends Model
     use Searchable;
 
     protected $fillable = [
+        'user_id',
+        'card_id',
+        'reference',
         'name',
         'description',
-        'price',
-        'status',
+        'items',
         'amount',
+        'points_earned',
+        'status',
         'discount',
         'total',
         'discount_id',
     ];
 
+    protected $casts = [
+        'items' => 'array',
+    ];
+
     protected $searchableFields = ['*'];
+
+    public function user()
+    {
+        return $this->belongsTo(User::class);
+    }
+
+    public function card()
+    {
+        return $this->belongsTo(Card::class);
+    }
 
     public function discount()
     {

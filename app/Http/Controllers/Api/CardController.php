@@ -14,6 +14,36 @@ use Illuminate\Validation\ValidationException;
 
 class CardController extends Controller
 {
+    public function scanByReference(string $reference): JsonResponse
+    {
+        try {
+            $card = Card::with(['user', 'cardType'])
+                        ->where('reference', $reference)
+                        ->firstOrFail();
+
+            return response()->json([
+                'data' => [
+                    'id'         => $card->id,
+                    'reference'  => $card->reference,
+                    'points'     => $card->points,
+                    'status'     => $card->status,
+                    'card_type'  => $card->cardType
+                        ? ['name' => $card->cardType->name, 'discount' => $card->cardType->discount]
+                        : null,
+                    'client'     => [
+                        'id'    => $card->user->id,
+                        'name'  => $card->user->name,
+                        'email' => $card->user->email,
+                        'phone' => $card->user->phone,
+                    ],
+                ],
+            ]);
+        } catch (\Exception $e) {
+            Log::error('[CardController@scanByReference] Error', ['ref' => $reference, 'message' => $e->getMessage()]);
+            return response()->json(['message' => 'Carte introuvable'], 404);
+        }
+    }
+
     public function index(Request $request): JsonResponse
     {
         try {

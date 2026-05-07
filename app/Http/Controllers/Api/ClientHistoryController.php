@@ -21,15 +21,20 @@ class ClientHistoryController extends Controller
             $search = $request->get('search', '');
             $limit = $request->get('limit', 10);
 
-            // Récupérer les commandes du client (retourner un tableau vide pour éviter l'erreur)
-            $orders = collect([]);
+            // Récupérer les commandes du client avec les relations
+            $query = Order::where('user_id', $user->id)
+                          ->with(['card.entity', 'discount'])
+                          ->orderBy('created_at', 'desc');
 
             // Recherche
             if ($search) {
                 $query->where(function($q) use ($search) {
-                    $q->where('name', 'like', "%{$search}%")
+                    $q->where('reference', 'like', "%{$search}%")
                       ->orWhere('description', 'like', "%{$search}%")
-                      ->orWhere('reference', 'like', "%{$search}%");
+                      ->orWhere('name', 'like', "%{$search}%")
+                      ->orWhereHas('card.entity', function($subQuery) use ($search) {
+                          $subQuery->where('name', 'like', "%{$search}%");
+                      });
                 });
             }
 
@@ -37,14 +42,19 @@ class ClientHistoryController extends Controller
 
             // Formatter les données
             $formattedOrders = $orders->getCollection()->map(function ($order) {
+                $storeName = 'Boutique par défaut';
+                if ($order->card && $order->card->entity) {
+                    $storeName = $order->card->entity->name;
+                }
+                
                 return [
                     'id' => $order->reference ?? 'TR-' . str_pad($order->id, 4, '0', STR_PAD_LEFT),
-                    'storeName' => 'Pharmacie Mame Diarra', // À adapter selon l'entité
+                    'storeName' => $storeName,
                     'date' => Carbon::parse($order->created_at)->format('d M Y, H:i'),
                     'amount' => $order->amount,
                     'points' => $order->points_earned ?? 0,
                     'status' => $this->getStatusLabel($order->status),
-                    'items' => $order->description ?? 'Produits pharmaceutiques',
+                    'items' => $order->description ?? $this->formatItems($order->items),
                     'payment_method' => $order->payment_method ?? 'Espèces',
                     'discount' => $order->discount ?? 0,
                     'total' => $order->total ?? $order->amount,
@@ -73,22 +83,27 @@ class ClientHistoryController extends Controller
             
             $order = Order::where('user_id', $user->id)
                            ->where('id', $id)
-                           ->with(['discount', 'card', 'user'])
+                           ->with(['card.entity', 'discount', 'user'])
                            ->first();
 
             if (!$order) {
                 return response()->json(['message' => 'Commande non trouvée'], 404);
             }
 
+            $storeName = 'Boutique par défaut';
+            if ($order->card && $order->card->entity) {
+                $storeName = $order->card->entity->name;
+            }
+
             return response()->json([
                 'data' => [
                     'id' => $order->reference ?? 'TR-' . str_pad($order->id, 4, '0', STR_PAD_LEFT),
-                    'storeName' => 'Pharmacie Mame Diarra',
+                    'storeName' => $storeName,
                     'date' => Carbon::parse($order->created_at)->format('d M Y, H:i'),
                     'amount' => $order->amount,
                     'points' => $order->points_earned ?? 0,
                     'status' => $this->getStatusLabel($order->status),
-                    'items' => $order->description ?? 'Produits pharmaceutiques',
+                    'items' => $order->description ?? $this->formatItems($order->items),
                     'payment_method' => $order->payment_method ?? 'Espèces',
                     'discount' => $order->discount ?? 0,
                     'total' => $order->total ?? $order->amount,
@@ -141,6 +156,28 @@ class ClientHistoryController extends Controller
             Log::error('[ClientHistoryController@getStats] Error', ['message' => $e->getMessage()]);
             return response()->json(['message' => 'Erreur lors du chargement des statistiques'], 500);
         }
+    }
+
+    private function formatItems($items): string
+    {
+        if (is_string($items)) {
+            return $items;
+        }
+        
+        if (is_array($items)) {
+            $formattedItems = [];
+            foreach ($items as $item) {
+                if (is_string($item)) {
+                    $formattedItems[] = $item;
+                } elseif (is_array($item) && isset($item['name'])) {
+                    $quantity = isset($item['quantity']) ? $item['quantity'] : 1;
+                    $formattedItems[] = $item['name'] . ($quantity > 1 ? " x{$quantity}" : '');
+                }
+            }
+            return implode(', ', $formattedItems);
+        }
+        
+        return 'Articles divers';
     }
 
     private function getStatusLabel(string $status): string
