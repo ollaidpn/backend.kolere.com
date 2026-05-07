@@ -13,6 +13,10 @@ use App\Http\Controllers\Api\AdminInvitationController;
 use App\Http\Controllers\Api\SubscriptionController;
 use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\DashboardController;
+use App\Http\Controllers\Api\ClientController;
+use App\Http\Controllers\Api\SaleController;
+use App\Http\Controllers\Api\CardController;
+use App\Http\Controllers\Api\BackofficeDashboardController;
 
 /*
 |--------------------------------------------------------------------------
@@ -88,6 +92,41 @@ Route::prefix('admin')->group(function () {
 
     // Dashboard stats
     Route::get('/dashboard/stats', [DashboardController::class, 'stats']);
+});
+
+// ─── Espace Backoffice (pharmacie) ───────────────────────────────────────────
+Route::prefix('backoffice')->middleware('auth:sanctum')->group(function () {
+    Route::get('/me', function (Request $request) {
+        return response()->json(['data' => $request->user()]);
+    });
+
+    // Clients
+    Route::get('/clients', [ClientController::class, 'index']);
+    Route::post('/clients', [ClientController::class, 'store']);
+    Route::get('/clients/{id}', [ClientController::class, 'show']);
+    Route::put('/clients/{id}', [ClientController::class, 'update']);
+    Route::delete('/clients/{id}', [ClientController::class, 'destroy']);
+    Route::get('/clients/stats', [ClientController::class, 'getStats']);
+
+    // Ventes
+    Route::get('/sales', [SaleController::class, 'index']);
+    Route::post('/sales', [SaleController::class, 'store']);
+    Route::get('/sales/{id}', [SaleController::class, 'show']);
+    Route::get('/sales/stats', [SaleController::class, 'getStats']);
+    Route::get('/sales/recent', [SaleController::class, 'getRecentSales']);
+
+    // Cartes de fidélité
+    Route::get('/cards', [CardController::class, 'index']);
+    Route::post('/cards', [CardController::class, 'store']);
+    Route::get('/cards/{id}', [CardController::class, 'show']);
+    Route::put('/cards/{id}/add-points', [CardController::class, 'addPoints']);
+    Route::put('/cards/{id}/redeem-points', [CardController::class, 'redeemPoints']);
+    Route::get('/cards/stats', [CardController::class, 'getStats']);
+    Route::get('/cards/{id}/history', [CardController::class, 'getHistory']);
+
+    // Dashboard backoffice
+    Route::get('/dashboard/stats', [BackofficeDashboardController::class, 'getStats']);
+    Route::get('/dashboard/quick-stats', [BackofficeDashboardController::class, 'getQuickStats']);
 });
 
 // ─── Espace Manager (table managers) ─────────────────────────────────────────
