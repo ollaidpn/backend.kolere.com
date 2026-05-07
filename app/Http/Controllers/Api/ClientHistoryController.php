@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Models\Order;
 use App\Models\User;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use App\Http\Controllers\Controller;
@@ -22,7 +23,6 @@ class ClientHistoryController extends Controller
 
             // Récupérer les commandes du client
             $query = Order::where('user_id', $user->id)
-                           ->with(['discount', 'card'])
                            ->orderBy('created_at', 'desc');
 
             // Recherche
