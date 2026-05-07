@@ -27,7 +27,7 @@ use App\Http\Controllers\Api\BackofficeDashboardController;
 // ─── Authentification (publiques) ────────────────────────────────────────────
 Route::prefix('auth')->group(function () {
     Route::post('/client/login', [AuthController::class, 'loginClient']);
-    Route::post('/manager/login', [AuthController::class, 'loginManager']);
+    Route::post('/backoffice/login', [AuthController::class, 'loginManager']);
     Route::post('/admin/login', [AuthController::class, 'loginAdmin']);
 });
 
