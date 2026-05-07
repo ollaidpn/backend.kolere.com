@@ -19,7 +19,14 @@ return [
 
     'allowed_methods' => ['*'],
 
-    'allowed_origins' => ['*'],
+    'allowed_origins' => [
+        'http://localhost:8083',
+        'http://localhost:3000',
+        'http://127.0.0.1:8083',
+        'http://127.0.0.1:3000',
+        'https://kolere-api.ollaid.com',
+        'https://kolere.ollaid.com',
+    ],
 
     'allowed_origins_patterns' => [],
 
@@ -29,6 +36,6 @@ return [
 
     'max_age' => 0,
 
-    'supports_credentials' => false,
+    'supports_credentials' => true,
 
 ];
