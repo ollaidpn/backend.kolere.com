@@ -17,6 +17,10 @@ use App\Http\Controllers\Api\ClientController;
 use App\Http\Controllers\Api\SaleController;
 use App\Http\Controllers\Api\CardController;
 use App\Http\Controllers\Api\BackofficeDashboardController;
+use App\Http\Controllers\Api\ClientHistoryController;
+use App\Http\Controllers\Api\ClientPointsController;
+use App\Http\Controllers\Api\ClientPromotionsController;
+use App\Http\Controllers\Api\ClientProfileController;
 
 /*
 |--------------------------------------------------------------------------
@@ -101,28 +105,28 @@ Route::prefix('backoffice')->middleware('auth:sanctum')->group(function () {
     });
 
     // Clients
+    Route::get('/clients/stats', [ClientController::class, 'getStats']);
     Route::get('/clients', [ClientController::class, 'index']);
     Route::post('/clients', [ClientController::class, 'store']);
     Route::get('/clients/{id}', [ClientController::class, 'show']);
     Route::put('/clients/{id}', [ClientController::class, 'update']);
     Route::delete('/clients/{id}', [ClientController::class, 'destroy']);
-    Route::get('/clients/stats', [ClientController::class, 'getStats']);
 
     // Ventes
+    Route::get('/sales/stats', [SaleController::class, 'getStats']);
+    Route::get('/sales/recent', [SaleController::class, 'getRecentSales']);
     Route::get('/sales', [SaleController::class, 'index']);
     Route::post('/sales', [SaleController::class, 'store']);
     Route::get('/sales/{id}', [SaleController::class, 'show']);
-    Route::get('/sales/stats', [SaleController::class, 'getStats']);
-    Route::get('/sales/recent', [SaleController::class, 'getRecentSales']);
 
     // Cartes de fidélité
+    Route::get('/cards/stats', [CardController::class, 'getStats']);
     Route::get('/cards', [CardController::class, 'index']);
     Route::post('/cards', [CardController::class, 'store']);
     Route::get('/cards/{id}', [CardController::class, 'show']);
+    Route::get('/cards/{id}/history', [CardController::class, 'getHistory']);
     Route::put('/cards/{id}/add-points', [CardController::class, 'addPoints']);
     Route::put('/cards/{id}/redeem-points', [CardController::class, 'redeemPoints']);
-    Route::get('/cards/stats', [CardController::class, 'getStats']);
-    Route::get('/cards/{id}/history', [CardController::class, 'getHistory']);
 
     // Dashboard backoffice
     Route::get('/dashboard/stats', [BackofficeDashboardController::class, 'getStats']);
@@ -137,8 +141,32 @@ Route::prefix('manager')->group(function () {
 });
 
 // ─── Espace Client (table users) ────────────────────────────────────────────
-Route::prefix('client')->group(function () {
+Route::prefix('client')->middleware('auth:sanctum')->group(function () {
     Route::get('/me', function (Request $request) {
         return response()->json(['data' => $request->user()]);
-    })->middleware('auth:sanctum');
+    });
+    
+    // Historique d'achats
+    Route::get('/history', [ClientHistoryController::class, 'index']);
+    Route::get('/history/stats', [ClientHistoryController::class, 'getStats']);
+    Route::get('/history/{id}', [ClientHistoryController::class, 'show']);
+    
+    // Points et récompenses
+    Route::get('/points', [ClientPointsController::class, 'index']);
+    Route::get('/points/rewards', [ClientPointsController::class, 'getRewards']);
+    Route::post('/points/redeem/{id}', [ClientPointsController::class, 'redeemReward']);
+    
+    // Promotions
+    Route::get('/promotions', [ClientPromotionsController::class, 'index']);
+    Route::get('/promotions/featured', [ClientPromotionsController::class, 'getFeatured']);
+    Route::get('/promotions/{id}', [ClientPromotionsController::class, 'show']);
+    
+    // Profil
+    Route::get('/profile', [ClientProfileController::class, 'show']);
+    Route::put('/profile', [ClientProfileController::class, 'update']);
+    Route::put('/profile/password', [ClientProfileController::class, 'updatePassword']);
+    Route::put('/profile/email', [ClientProfileController::class, 'updateEmail']);
+    Route::delete('/profile', [ClientProfileController::class, 'deleteAccount']);
+    Route::get('/profile/preferences', [ClientProfileController::class, 'getPreferences']);
+    Route::put('/profile/preferences', [ClientProfileController::class, 'updatePreferences']);
 });
