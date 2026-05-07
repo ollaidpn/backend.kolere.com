@@ -16,7 +16,7 @@ class User extends Authenticatable
     use Searchable;
     use HasApiTokens;
 
-    protected $fillable = ['name', 'email', 'password'];
+    protected $fillable = ['name', 'email', 'password', 'phone', 'address', 'avatar'];
 
     protected $searchableFields = ['*'];
 

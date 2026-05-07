@@ -164,6 +164,7 @@ Route::prefix('client')->middleware('auth:sanctum')->group(function () {
     // Profil
     Route::get('/profile', [ClientProfileController::class, 'show']);
     Route::put('/profile', [ClientProfileController::class, 'update']);
+    Route::post('/profile/avatar', [ClientProfileController::class, 'updateAvatar']);
     Route::put('/profile/password', [ClientProfileController::class, 'updatePassword']);
     Route::put('/profile/email', [ClientProfileController::class, 'updateEmail']);
     Route::delete('/profile', [ClientProfileController::class, 'deleteAccount']);

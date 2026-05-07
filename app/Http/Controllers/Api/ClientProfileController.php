@@ -9,6 +9,7 @@ use Illuminate\Http\JsonResponse;
 use App\Http\Controllers\Controller;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 
 class ClientProfileController extends Controller
@@ -109,6 +110,42 @@ class ClientProfileController extends Controller
         } catch (\Exception $e) {
             Log::error('[ClientProfileController@update] Error', ['message' => $e->getMessage()]);
             return response()->json(['message' => 'Erreur lors de la mise à jour du profil'], 500);
+        }
+    }
+
+    public function updateAvatar(Request $request): JsonResponse
+    {
+        try {
+            $user = $request->user();
+
+            $validator = Validator::make($request->all(), [
+                'avatar' => 'required|image|mimes:jpeg,png,jpg,webp|max:2048',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'message' => 'Fichier invalide',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            // Supprimer l'ancien avatar
+            if ($user->avatar) {
+                Storage::disk('public')->delete('avatars/' . basename($user->avatar));
+            }
+
+            $path = $request->file('avatar')->store('avatars', 'public');
+            $url = config('app.url') . '/storage/' . $path;
+
+            $user->update(['avatar' => $url]);
+
+            return response()->json([
+                'message' => 'Photo mise à jour avec succès',
+                'data' => ['avatar' => $url]
+            ]);
+        } catch (\Exception $e) {
+            Log::error('[ClientProfileController@updateAvatar] Error', ['message' => $e->getMessage()]);
+            return response()->json(['message' => 'Erreur lors du changement de photo'], 500);
         }
     }
 
