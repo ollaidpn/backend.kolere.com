@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Laravel\Sanctum\HasApiTokens;
 use App\Models\Scopes\Searchable;
+use App\Models\Order;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -34,6 +35,11 @@ class User extends Authenticatable
     public function card()
     {
         return $this->hasOne(Card::class)->latestOfMany();
+    }
+
+    public function orders()
+    {
+        return $this->hasMany(Order::class);
     }
 
     public function isSuperAdmin(): bool

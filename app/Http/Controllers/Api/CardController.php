@@ -159,12 +159,13 @@ class CardController extends Controller
             return DB::transaction(function () use ($validated, $id) {
                 $card = Card::findOrFail($id);
                 
-                $card->increment('points', $validated['points']);
+                $card->increment('credit', $validated['points']);
 
                 // Créer un crédit de points
                 CardCredit::create([
                     'card_id' => $card->id,
                     'points' => $validated['points'],
+                    'credit' => $validated['points'],
                     'type' => $validated['type'],
                     'description' => $validated['description'],
                 ]);
@@ -207,12 +208,13 @@ class CardController extends Controller
                     ]);
                 }
 
-                $card->decrement('points', $validated['points']);
+                $card->decrement('credit', $validated['points']);
 
                 // Créer un débit de points
                 CardCredit::create([
                     'card_id' => $card->id,
                     'points' => -$validated['points'],
+                    'credit' => -$validated['points'],
                     'type' => 'redeemed',
                     'description' => $validated['description'],
                     'reward_id' => $validated['reward_id'] ?? null,

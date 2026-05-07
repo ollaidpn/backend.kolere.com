@@ -21,6 +21,7 @@ use App\Http\Controllers\Api\ClientHistoryController;
 use App\Http\Controllers\Api\ClientPointsController;
 use App\Http\Controllers\Api\ClientPromotionsController;
 use App\Http\Controllers\Api\ClientProfileController;
+use App\Http\Controllers\Api\RewardController;
 
 /*
 |--------------------------------------------------------------------------
@@ -128,6 +129,13 @@ Route::prefix('backoffice')->middleware('auth:sanctum')->group(function () {
     Route::get('/cards/{id}/history', [CardController::class, 'getHistory']);
     Route::put('/cards/{id}/add-points', [CardController::class, 'addPoints']);
     Route::put('/cards/{id}/redeem-points', [CardController::class, 'redeemPoints']);
+
+    // Récompenses
+    Route::get('/rewards', [RewardController::class, 'index']);
+    Route::post('/rewards', [RewardController::class, 'store']);
+    Route::put('/rewards/{id}', [RewardController::class, 'update']);
+    Route::delete('/rewards/{id}', [RewardController::class, 'destroy']);
+    Route::patch('/rewards/{id}/toggle-status', [RewardController::class, 'toggleStatus']);
 
     // Dashboard backoffice
     Route::get('/dashboard/stats', [BackofficeDashboardController::class, 'getStats']);

@@ -38,7 +38,7 @@ class BackofficeDashboardController extends Controller
             $lastMonthSales = Order::whereBetween('created_at', [$lastMonth, $lastMonthEnd])->sum('amount');
 
             // Statistiques points
-            $totalPointsDistributed = Card::sum('points');
+            $totalPointsDistributed = Card::sum('credit');
             $pointsEarnedThisMonth = Order::where('created_at', '>=', $thisMonth)->sum('points_earned');
             $averagePointsPerClient = $totalClients > 0 ? $totalPointsDistributed / $totalClients : 0;
 
@@ -149,11 +149,8 @@ class BackofficeDashboardController extends Controller
             $stats = [
                 'clients_fidelises' => User::whereHas('card')->count(),
                 'ventes_du_jour' => Order::whereDate('created_at', $today)->sum('amount'),
-                'points_distribues' => Card::sum('points'),
-                'promotions_actives' => Discount::where('status', 'active')
-                                           ->where('start_date', '<=', now())
-                                           ->where('end_date', '>=', now())
-                                           ->count(),
+                'points_distribues' => Card::sum('credit'),
+                'promotions_actives' => 0,
             ];
 
             return response()->json(['data' => $stats]);

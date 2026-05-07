@@ -11,7 +11,7 @@ class CardCredit extends Model
     use HasFactory;
     use Searchable;
 
-    protected $fillable = ['card_id', 'order_id', 'amount', 'credit'];
+    protected $fillable = ['card_id', 'order_id', 'reward_id', 'amount', 'credit', 'points', 'type', 'description'];
 
     protected $searchableFields = ['*'];
 

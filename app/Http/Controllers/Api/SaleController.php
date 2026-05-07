@@ -91,14 +91,15 @@ class SaleController extends Controller
                     'reference' => 'SALE-' . date('YmdHis') . '-' . rand(1000, 9999),
                 ]);
 
-                // Ajouter les points à la carte
-                $card->increment('points', $pointsEarned);
+                // Ajouter les points à la carte (colonne credit)
+                $card->increment('credit', $pointsEarned);
 
                 // Créer un crédit de points pour l'historique
                 CardCredit::create([
                     'card_id' => $card->id,
                     'order_id' => $order->id,
                     'points' => $pointsEarned,
+                    'credit' => $pointsEarned,
                     'type' => 'earned',
                     'description' => "Points gagnés - Vente {$order->reference}",
                 ]);
