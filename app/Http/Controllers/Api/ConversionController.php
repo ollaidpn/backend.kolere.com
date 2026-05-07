@@ -124,6 +124,8 @@ class ConversionController extends Controller
                 try {
                     $cc = CardCredit::create([
                         'card_id'     => $card->id,
+                        'order_id'    => 0,
+                        'amount'      => $reward->points_required,
                         'reward_id'   => $reward->id,
                         'points'      => -$reward->points_required,
                         'credit'      => -$reward->points_required,
@@ -132,8 +134,10 @@ class ConversionController extends Controller
                     ]);
                 } catch (\Illuminate\Database\QueryException $qe) {
                     $cc = new CardCredit();
-                    $cc->card_id = $card->id;
-                    $cc->credit  = -$reward->points_required;
+                    $cc->card_id  = $card->id;
+                    $cc->order_id = 0;
+                    $cc->amount   = $reward->points_required;
+                    $cc->credit   = -$reward->points_required;
                     $cc->save();
                 }
 

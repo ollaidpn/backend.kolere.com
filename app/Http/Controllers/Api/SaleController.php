@@ -112,6 +112,7 @@ class SaleController extends Controller
                     CardCredit::create([
                         'card_id'     => $card->id,
                         'order_id'    => $order->id,
+                        'amount'      => $pointsEarned,
                         'points'      => $pointsEarned,
                         'credit'      => $pointsEarned,
                         'type'        => 'earned',
@@ -121,6 +122,7 @@ class SaleController extends Controller
                     $cc = new CardCredit();
                     $cc->card_id  = $card->id;
                     $cc->order_id = $order->id;
+                    $cc->amount   = $pointsEarned;
                     $cc->credit   = $pointsEarned;
                     $cc->save();
                 }
