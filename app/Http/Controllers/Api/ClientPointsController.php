@@ -2,10 +2,9 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Models\User;
 use App\Models\Card;
 use App\Models\CardCredit;
-use App\Models\Discount;
+use App\Models\Reward;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use App\Http\Controllers\Controller;
@@ -18,82 +17,58 @@ class ClientPointsController extends Controller
     {
         try {
             $user = $request->user();
-            
-            // Récupérer la carte du client
-            $card = Card::where('user_id', $user->id)
-                           ->with(['cardType', 'entity'])
-                           ->first();
+
+            $card = Card::where('user_id', $user->id)->with(['cardType'])->first();
 
             if (!$card) {
-                return response()->json([
-                    'message' => 'Aucune carte de fidélité trouvée',
-                    'data' => null
-                ], 404);
+                return response()->json(['message' => 'Aucune carte de fidélité trouvée', 'data' => null], 404);
             }
 
-            // Statistiques des points
-            $totalEarned = CardCredit::where('card_id', $card->id)
-                                       ->where('type', 'earned')
-                                       ->sum('amount');
-            
-            $totalSpent = CardCredit::where('card_id', $card->id)
-                                      ->where('type', 'spent')
-                                      ->sum('amount');
+            $points = $card->credit ?? 0;
 
-            // Historique récent des transactions
-            $recentTransactions = CardCredit::where('card_id', $card->id)
-                                           ->with(['order'])
-                                           ->orderBy('created_at', 'desc')
-                                           ->limit(10)
-                                           ->get()
-                                           ->map(function ($transaction) {
-                                               return [
-                                                   'id' => $transaction->id,
-                                                   'type' => $transaction->type,
-                                                   'amount' => $transaction->amount,
-                                                   'description' => $transaction->description,
-                                                   'date' => Carbon::parse($transaction->created_at)->format('d M Y, H:i'),
-                                                   'order_id' => $transaction->order_id,
-                                                   'order_reference' => $transaction->order ? $transaction->order->reference : null,
-                                               ];
-                                           });
+            // Points gagnés et dépensés — résilients si colonne type absente
+            $totalEarned = 0;
+            $totalSpent  = 0;
+            try {
+                $totalEarned = (int) CardCredit::where('card_id', $card->id)->where('type', 'earned')->sum('credit');
+                $totalSpent  = abs((int) CardCredit::where('card_id', $card->id)->where('type', 'redeemed')->sum('credit'));
+            } catch (\Exception $e) {
+                $totalEarned = (int) CardCredit::where('card_id', $card->id)->where('credit', '>', 0)->sum('credit');
+                $totalSpent  = abs((int) CardCredit::where('card_id', $card->id)->where('credit', '<', 0)->sum('credit'));
+            }
 
-            // Promotions disponibles
-            $availablePromotions = Discount::where('card_id', $card->id)
-                                        ->where('status', 'active')
-                                        ->where('expiration', '>', now())
-                                        ->get()
-                                        ->map(function ($discount) {
-                                            return [
-                                                'id' => $discount->id,
-                                                'title' => $this->getPromotionTitle($discount),
-                                                'description' => $this->getPromotionDescription($discount),
-                                                'discount_type' => $discount->discount_type,
-                                                'discount_value' => $discount->discount_value,
-                                                'discount_amount' => $discount->discount_amount,
-                                                'expiration' => Carbon::parse($discount->expiration)->format('d M Y'),
-                                                'points_required' => $this->calculatePointsRequired($discount),
-                                            ];
-                                        });
+            // Historique récent
+            $recentTransactions = [];
+            try {
+                $recentTransactions = CardCredit::where('card_id', $card->id)
+                    ->orderBy('created_at', 'desc')
+                    ->limit(15)
+                    ->get()
+                    ->map(function ($t) {
+                        $pts   = $t->points ?? $t->credit ?? 0;
+                        $type  = $t->type ?? ($pts >= 0 ? 'earned' : 'redeemed');
+                        return [
+                            'id'              => $t->id,
+                            'type'            => $type,
+                            'amount'          => $pts,
+                            'description'     => $t->description ?? ($pts >= 0 ? 'Points gagnés' : 'Points utilisés'),
+                            'date'            => Carbon::parse($t->created_at)->format('d M Y, H:i'),
+                            'order_reference' => null,
+                        ];
+                    })->toArray();
+            } catch (\Exception $e) {
+                Log::warning('[ClientPointsController] recentTransactions failed: ' . $e->getMessage());
+            }
 
-            $pointsData = [
-                'current_balance' => $card->points,
-                'total_earned' => $totalEarned,
-                'total_spent' => $totalSpent,
-                'card_type' => $card->cardType ? [
-                    'name' => $card->cardType->name,
-                    'discount' => $card->cardType->discount,
-                ] : null,
-                'entity' => $card->entity ? [
-                    'name' => $card->entity->name,
-                    'logo' => $card->entity->logo,
-                ] : null,
-                'recent_transactions' => $recentTransactions,
-                'available_promotions' => $availablePromotions,
-                'next_level' => $this->getNextLevel($card->points),
-            ];
-
-            return response()->json(['data' => $pointsData]);
+            return response()->json(['data' => [
+                'current_balance'      => $points,
+                'total_earned'         => $totalEarned,
+                'total_spent'          => $totalSpent,
+                'card_type'            => $card->cardType ? ['name' => $card->cardType->name, 'discount' => $card->cardType->discount ?? 0] : null,
+                'recent_transactions'  => $recentTransactions,
+                'available_promotions' => [],
+                'next_level'           => $this->getNextLevel($points),
+            ]]);
         } catch (\Exception $e) {
             Log::error('[ClientPointsController@index] Error', ['message' => $e->getMessage()]);
             return response()->json(['message' => 'Erreur lors du chargement des points'], 500);
@@ -104,145 +79,75 @@ class ClientPointsController extends Controller
     {
         try {
             $user = $request->user();
-            
-            $card = Card::where('user_id', $user->id)
-                           ->with(['cardType'])
-                           ->first();
+            $card = Card::where('user_id', $user->id)->first();
+            $points = $card ? ($card->credit ?? 0) : 0;
 
-            if (!$card) {
-                return response()->json(['message' => 'Aucune carte trouvée'], 404);
-            }
-
-            // Récompenses disponibles selon le niveau de points
-            $rewards = $this->getAvailableRewards($card->points, $card->cardType);
+            $rewards = Reward::where('status', 'active')
+                ->orderBy('points_required')
+                ->get()
+                ->map(fn($r) => [
+                    'id'               => (string) $r->id,
+                    'title'            => $r->name,
+                    'description'      => $r->description ?? '',
+                    'points_required'  => $r->points_required,
+                    'available'        => $points >= $r->points_required && ($r->stock === null || $r->stock > 0),
+                ])->toArray();
 
             return response()->json(['data' => $rewards]);
         } catch (\Exception $e) {
             Log::error('[ClientPointsController@getRewards] Error', ['message' => $e->getMessage()]);
-            return response()->json(['message' => 'Erreur lors du chargement des récompenses'], 500);
+            return response()->json(['data' => []]);
         }
     }
 
     public function redeemReward(Request $request, $id): JsonResponse
     {
         try {
-            $user = $request->user();
-            
-            $card = Card::where('user_id', $user->id)->first();
-            $discount = Discount::find($id);
+            $user   = $request->user();
+            $card   = Card::where('user_id', $user->id)->firstOrFail();
+            $reward = Reward::where('status', 'active')->findOrFail($id);
 
-            if (!$card || !$discount) {
-                return response()->json(['message' => 'Carte ou récompense non trouvée'], 404);
-            }
-
-            if ($discount->card_id !== $card->id) {
-                return response()->json(['message' => 'Récompense non disponible pour cette carte'], 403);
-            }
-
-            if ($card->points < $this->calculatePointsRequired($discount)) {
+            $points = $card->credit ?? 0;
+            if ($points < $reward->points_required) {
                 return response()->json(['message' => 'Points insuffisants'], 400);
             }
 
-            // Déduire les points
-            $card->decrement('points', $this->calculatePointsRequired($discount));
+            $card->decrement('credit', $reward->points_required);
 
-            // Marquer la récompense comme utilisée
-            $discount->update(['status' => 'used']);
+            try {
+                CardCredit::create([
+                    'card_id'     => $card->id,
+                    'order_id'    => null,
+                    'amount'      => $reward->points_required,
+                    'credit'      => -$reward->points_required,
+                    'type'        => 'redeemed',
+                    'description' => "Échange : {$reward->name}",
+                ]);
+            } catch (\Exception $e) {
+                $cc = new CardCredit();
+                $cc->card_id  = $card->id;
+                $cc->order_id = null;
+                $cc->amount   = $reward->points_required;
+                $cc->credit   = -$reward->points_required;
+                $cc->save();
+            }
+
+            if ($reward->stock !== null) $reward->decrement('stock');
 
             return response()->json([
                 'message' => 'Récompense échangée avec succès',
-                'data' => [
-                    'points_deducted' => $this->calculatePointsRequired($discount),
-                    'new_balance' => $card->fresh()->points,
-                ]
+                'data'    => ['points_deducted' => $reward->points_required, 'new_balance' => $card->fresh()->credit],
             ]);
         } catch (\Exception $e) {
             Log::error('[ClientPointsController@redeemReward] Error', ['message' => $e->getMessage()]);
-            return response()->json(['message' => 'Erreur lors de l\'échange de récompense'], 500);
+            return response()->json(['message' => 'Erreur lors de l\'échange'], 500);
         }
     }
 
-    private function getPromotionTitle(Discount $discount): string
+    private function getNextLevel(int $points): ?array
     {
-        if ($discount->discount_type === 'percentage') {
-            return "Réduction de {$discount->discount_value}%";
-        } else {
-            return "Réduction de {$discount->discount_amount} FCFA";
-        }
-    }
-
-    private function getPromotionDescription(Discount $discount): string
-    {
-        if ($discount->discount_type === 'percentage') {
-            return "Bénéficiez de {$discount->discount_value}% de réduction sur votre prochain achat.";
-        } else {
-            return "Bénéficiez de {$discount->discount_amount} FCFA de réduction sur votre prochain achat.";
-        }
-    }
-
-    private function calculatePointsRequired(Discount $discount): int
-    {
-        // Calculer les points nécessaires (1000 FCFA = 1 point)
-        if ($discount->discount_type === 'percentage') {
-            return 100; // 10% de réduction = 100 points
-        } else {
-            return ceil($discount->discount_amount / 1000);
-        }
-    }
-
-    private function getNextLevel(int $currentPoints): ?array
-    {
-        if ($currentPoints < 500) {
-            return ['name' => 'Silver', 'points_needed' => 500 - $currentPoints, 'discount' => 10];
-        } elseif ($currentPoints < 1500) {
-            return ['name' => 'Gold', 'points_needed' => 1500 - $currentPoints, 'discount' => 15];
-        }
-        
-        return null; // Déjà au niveau maximum
-    }
-
-    private function getAvailableRewards(int $points, $cardType): array
-    {
-        $rewards = [];
-
-        // Récompenses de base disponibles pour tous
-        $rewards[] = [
-            'id' => 'basic_10',
-            'title' => 'Réduction 10%',
-            'description' => '10% de réduction sur votre prochain achat',
-            'points_required' => 100,
-            'available' => $points >= 100,
-        ];
-
-        $rewards[] = [
-            'id' => 'basic_20',
-            'title' => 'Réduction 2000 FCFA',
-            'description' => '2000 FCFA de réduction sur votre prochain achat',
-            'points_required' => 200,
-            'available' => $points >= 200,
-        ];
-
-        // Récompenses supplémentaires selon le type de carte
-        if ($cardType && $cardType->name === 'Silver') {
-            $rewards[] = [
-                'id' => 'silver_special',
-                'title' => 'Produit offert',
-                'description' => 'Un produit gratuit jusqu\'à 5000 FCFA',
-                'points_required' => 500,
-                'available' => $points >= 500,
-            ];
-        }
-
-        if ($cardType && $cardType->name === 'Gold') {
-            $rewards[] = [
-                'id' => 'gold_vip',
-                'title' => 'Service VIP',
-                'description' => 'Consultation prioritaire et livraison gratuite',
-                'points_required' => 1000,
-                'available' => $points >= 1000,
-            ];
-        }
-
-        return $rewards;
+        if ($points < 500)  return ['name' => 'Silver', 'points_needed' => 500  - $points, 'target' => 500];
+        if ($points < 1500) return ['name' => 'Gold',   'points_needed' => 1500 - $points, 'target' => 1500];
+        return null;
     }
 }

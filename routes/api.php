@@ -25,6 +25,7 @@ use App\Http\Controllers\Api\RewardController;
 use App\Http\Controllers\Api\ConversionController;
 use App\Http\Controllers\Api\DemandeController;
 use App\Http\Controllers\Api\ClientDemandeController;
+use App\Http\Controllers\Api\BackofficeEntityController;
 
 /*
 |--------------------------------------------------------------------------
@@ -148,6 +149,10 @@ Route::prefix('backoffice')->middleware('auth:sanctum')->group(function () {
     // Dashboard backoffice
     Route::get('/dashboard/stats', [BackofficeDashboardController::class, 'getStats']);
     Route::get('/dashboard/quick-stats', [BackofficeDashboardController::class, 'getQuickStats']);
+
+    // Paramètres entité (pharmacie)
+    Route::get('/entity', [BackofficeEntityController::class, 'show']);
+    Route::post('/entity', [BackofficeEntityController::class, 'update']);
 
     // Demandes clients
     Route::get('/demandes', [DemandeController::class, 'index']);

@@ -124,7 +124,7 @@ class ConversionController extends Controller
                 try {
                     $cc = CardCredit::create([
                         'card_id'     => $card->id,
-                        'order_id'    => 0,
+                        'order_id'    => null,
                         'amount'      => $reward->points_required,
                         'reward_id'   => $reward->id,
                         'points'      => -$reward->points_required,

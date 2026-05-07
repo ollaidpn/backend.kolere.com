@@ -61,8 +61,17 @@ class ClientController extends Controller
         try {
             $client = User::with(['card.cardCredits', 'orders'])
                         ->findOrFail($id);
-            
-            return response()->json(['data' => $client]);
+
+            $data = $client->toArray();
+            if ($client->avatar) {
+                $data['avatar_url'] = str_starts_with($client->avatar, 'http')
+                    ? $client->avatar
+                    : url(\Illuminate\Support\Facades\Storage::url($client->avatar));
+            } else {
+                $data['avatar_url'] = null;
+            }
+
+            return response()->json(['data' => $data]);
         } catch (\Exception $e) {
             Log::error('[ClientController@show] Error', ['id' => $id, 'message' => $e->getMessage()]);
             return response()->json(['message' => 'Client non trouvé'], 404);
