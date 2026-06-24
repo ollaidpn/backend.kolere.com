@@ -13,15 +13,13 @@ return new class extends Migration
             $table->foreignId('entity_id')->constrained('entities')->cascadeOnDelete();
             $table->foreignId('shop_order_id')->nullable()->constrained('shop_orders')->nullOnDelete();
             $table->string('reference');
-            $table->string('customer_name');
+            $table->json('client_infos')->nullable();
             $table->decimal('amount', 12, 2)->default(0);
             $table->string('method')->default('online');
-            $table->string('status')->default('pending');
-            $table->string('source')->nullable();
-            $table->json('metadata')->nullable();
+            $table->string('paid_by')->nullable();
             $table->timestamps();
 
-            $table->unique(['entity_id', 'reference']);
+            $table->unique('reference');
         });
     }
 

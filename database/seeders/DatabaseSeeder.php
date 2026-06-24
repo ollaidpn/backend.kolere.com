@@ -19,6 +19,8 @@ use App\Models\Discount;
 use App\Models\CardCredit;
 use App\Models\AlertApp;
 use App\Models\AlertMessage;
+use App\Models\ShopCategory;
+use App\Models\ShopBrand;
 
 class DatabaseSeeder extends Seeder
 {
@@ -162,6 +164,43 @@ class DatabaseSeeder extends Seeder
                 'discount_amount' => 2000,
                 'expiration'      => '2026-06-30',
             ]);
+
+            // ╔══════════════════════════════════════╗
+            // ║  7B. SHOP CATEGORIES + BRANDS        ║
+            // ╚══════════════════════════════════════╝
+            $shopCategories = [
+                'Médicaments',
+                'Compléments',
+                'Hygiène',
+                'Bébé',
+            ];
+
+            foreach ($shopCategories as $index => $name) {
+                ShopCategory::firstOrCreate([
+                    'reference' => 'SHC-' . str_pad((string) ($index + 1), 3, '0', STR_PAD_LEFT),
+                ], [
+                    'entity_id' => $pharmacie->id,
+                    'name' => $name,
+                ]);
+            }
+
+            $shopBrands = [
+                ['reference' => 'SHB-001', 'name' => 'Sanofi', 'image' => null],
+                ['reference' => 'SHB-002', 'name' => 'Upsa', 'image' => null],
+                ['reference' => 'SHB-003', 'name' => 'Bayer', 'image' => null],
+                ['reference' => 'SHB-004', 'name' => 'GSK', 'image' => null],
+            ];
+
+            foreach ($shopBrands as $brand) {
+                ShopBrand::firstOrCreate(
+                    ['reference' => $brand['reference']],
+                    [
+                        'entity_id' => $pharmacie->id,
+                        'name' => $brand['name'],
+                        'image' => $brand['image'],
+                    ]
+                );
+            }
 
             // ╔══════════════════════════════════════╗
             // ║  8. ORDERS (commandes clients)         ║

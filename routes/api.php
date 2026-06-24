@@ -27,6 +27,12 @@ use App\Http\Controllers\Api\ConversionController;
 use App\Http\Controllers\Api\DemandeController;
 use App\Http\Controllers\Api\ClientDemandeController;
 use App\Http\Controllers\Api\BackofficeEntityController;
+use App\Http\Controllers\Api\ShopItemController;
+use App\Http\Controllers\Api\ShopCategoryController;
+use App\Http\Controllers\Api\ShopBrandController;
+use App\Http\Controllers\Api\ShopPromoCodeController;
+use App\Http\Controllers\Api\ShopPaymentController;
+use App\Http\Controllers\Api\ShopOrderController;
 
 /*
 |--------------------------------------------------------------------------
@@ -163,6 +169,34 @@ Route::prefix('backoffice')->middleware(['auth:sanctum', 'role:manager', 'resolv
     // Paramètres entité (pharmacie)
     Route::get('/entity', [BackofficeEntityController::class, 'show']);
     Route::post('/entity', [BackofficeEntityController::class, 'update']);
+
+    // Boutique - articles
+    Route::get('/shop/items', [ShopItemController::class, 'index']);
+    Route::post('/shop/items', [ShopItemController::class, 'store']);
+    Route::get('/shop/items/{item}', [ShopItemController::class, 'show']);
+    Route::put('/shop/items/{item}', [ShopItemController::class, 'update']);
+    Route::delete('/shop/items/{item}', [ShopItemController::class, 'destroy']);
+
+    Route::get('/shop/categories', [ShopCategoryController::class, 'index']);
+    Route::post('/shop/categories', [ShopCategoryController::class, 'store']);
+    Route::put('/shop/categories/{category}', [ShopCategoryController::class, 'update']);
+    Route::delete('/shop/categories/{category}', [ShopCategoryController::class, 'destroy']);
+
+    Route::get('/shop/brands', [ShopBrandController::class, 'index']);
+    Route::post('/shop/brands', [ShopBrandController::class, 'store']);
+    Route::put('/shop/brands/{brand}', [ShopBrandController::class, 'update']);
+    Route::delete('/shop/brands/{brand}', [ShopBrandController::class, 'destroy']);
+
+    Route::get('/shop/promo-codes', [ShopPromoCodeController::class, 'index']);
+    Route::post('/shop/promo-codes', [ShopPromoCodeController::class, 'store']);
+    Route::put('/shop/promo-codes/{promoCode}', [ShopPromoCodeController::class, 'update']);
+    Route::delete('/shop/promo-codes/{promoCode}', [ShopPromoCodeController::class, 'destroy']);
+
+    Route::get('/shop/orders', [ShopOrderController::class, 'index']);
+    Route::get('/shop/orders/{order}', [ShopOrderController::class, 'show']);
+    Route::put('/shop/orders/{order}', [ShopOrderController::class, 'update']);
+
+    Route::get('/shop/payments', [ShopPaymentController::class, 'index']);
 
     // Demandes clients
     Route::get('/demandes', [DemandeController::class, 'index']);

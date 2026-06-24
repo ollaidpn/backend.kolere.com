@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Models\Scopes\Searchable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Str;
 
 class ShopOrder extends Model
 {
@@ -16,20 +17,23 @@ class ShopOrder extends Model
     protected $fillable = [
         'entity_id',
         'reference',
-        'customer_name',
-        'customer_phone',
-        'customer_email',
+        'amount',
+        'discount',
         'total',
-        'status',
-        'payment_method',
-        'payment_status',
+        'client_infos',
+        'status_payment',
+        'status_delivery',
+        'status_order',
         'items',
-        'notes',
+        'note',
     ];
 
     protected $casts = [
         'items' => 'array',
+        'client_infos' => 'array',
         'total' => 'decimal:2',
+        'amount' => 'decimal:2',
+        'discount' => 'decimal:2',
     ];
 
     protected $searchableFields = ['*'];
@@ -37,5 +41,16 @@ class ShopOrder extends Model
     public function entity()
     {
         return $this->belongsTo(Entity::class);
+    }
+
+    protected static function booted(): void
+    {
+        static::creating(function (self $order) {
+            if (empty($order->reference)) {
+                do {
+                    $order->reference = 'SHO-' . strtoupper(Str::random(8));
+                } while (static::where('reference', $order->reference)->exists());
+            }
+        });
     }
 }

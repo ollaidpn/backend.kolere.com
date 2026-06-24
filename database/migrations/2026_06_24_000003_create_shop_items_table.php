@@ -12,8 +12,9 @@ return new class extends Migration
             $table->id();
             $table->foreignId('entity_id')->constrained('entities')->cascadeOnDelete();
             $table->foreignId('category_id')->constrained('shop_categories')->cascadeOnDelete();
+            $table->unsignedBigInteger('brand_id')->nullable();
+            $table->string('reference');
             $table->string('name');
-            $table->string('brand')->nullable();
             $table->decimal('price', 12, 2)->default(0);
             $table->decimal('promo_price', 12, 2)->nullable();
             $table->unsignedInteger('stock')->default(0);
@@ -24,6 +25,8 @@ return new class extends Migration
             $table->timestamps();
 
             $table->index(['entity_id', 'category_id']);
+            $table->index('brand_id');
+            $table->unique('reference');
         });
     }
 

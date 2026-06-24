@@ -15,6 +15,7 @@ class ShopPromoCode extends Model
 
     protected $fillable = [
         'entity_id',
+        'reference',
         'code',
         'description',
         'type',

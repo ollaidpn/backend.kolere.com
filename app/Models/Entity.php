@@ -96,6 +96,11 @@ class Entity extends Model
         return $this->hasMany(ShopCategory::class);
     }
 
+    public function shopBrands()
+    {
+        return $this->hasMany(ShopBrand::class);
+    }
+
     public function shopItems()
     {
         return $this->hasMany(ShopItem::class);

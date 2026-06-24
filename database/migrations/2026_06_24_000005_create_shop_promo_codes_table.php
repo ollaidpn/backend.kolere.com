@@ -11,6 +11,7 @@ return new class extends Migration
         Schema::create('shop_promo_codes', function (Blueprint $table) {
             $table->id();
             $table->foreignId('entity_id')->constrained('entities')->cascadeOnDelete();
+            $table->string('reference');
             $table->string('code');
             $table->text('description')->nullable();
             $table->string('type')->default('percentage');
@@ -22,6 +23,7 @@ return new class extends Migration
             $table->date('valid_until')->nullable();
             $table->timestamps();
 
+            $table->unique('reference');
             $table->unique(['entity_id', 'code']);
         });
     }

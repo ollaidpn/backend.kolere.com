@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Models\Scopes\Searchable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Str;
 
 class ShopItem extends Model
 {
@@ -16,8 +17,9 @@ class ShopItem extends Model
     protected $fillable = [
         'entity_id',
         'category_id',
+        'brand_id',
+        'reference',
         'name',
-        'brand',
         'price',
         'promo_price',
         'stock',
@@ -44,5 +46,21 @@ class ShopItem extends Model
     public function category()
     {
         return $this->belongsTo(ShopCategory::class, 'category_id');
+    }
+
+    public function brand()
+    {
+        return $this->belongsTo(ShopBrand::class, 'brand_id');
+    }
+
+    protected static function booted(): void
+    {
+        static::creating(function (self $item) {
+            if (empty($item->reference)) {
+                do {
+                    $item->reference = 'SHI-' . strtoupper(Str::random(8));
+                } while (static::where('reference', $item->reference)->exists());
+            }
+        });
     }
 }

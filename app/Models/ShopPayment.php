@@ -17,17 +17,15 @@ class ShopPayment extends Model
         'entity_id',
         'shop_order_id',
         'reference',
-        'customer_name',
+        'client_infos',
         'amount',
         'method',
-        'status',
-        'source',
-        'metadata',
+        'paid_by',
     ];
 
     protected $casts = [
         'amount' => 'decimal:2',
-        'metadata' => 'array',
+        'client_infos' => 'array',
     ];
 
     protected $searchableFields = ['*'];

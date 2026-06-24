@@ -7,17 +7,18 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
 
-class ShopCategory extends Model
+class ShopBrand extends Model
 {
     use HasFactory;
     use Searchable;
 
-    protected $table = 'shop_categories';
+    protected $table = 'shop_brands';
 
     protected $fillable = [
         'entity_id',
         'reference',
         'name',
+        'image',
     ];
 
     protected $searchableFields = ['*'];
@@ -29,16 +30,16 @@ class ShopCategory extends Model
 
     public function items()
     {
-        return $this->hasMany(ShopItem::class, 'category_id');
+        return $this->hasMany(ShopItem::class, 'brand_id');
     }
 
     protected static function booted(): void
     {
-        static::creating(function (self $category) {
-            if (empty($category->reference)) {
+        static::creating(function (self $brand) {
+            if (empty($brand->reference)) {
                 do {
-                    $category->reference = 'SHC-' . strtoupper(Str::random(8));
-                } while (static::where('reference', $category->reference)->exists());
+                    $brand->reference = 'SHB-' . strtoupper(Str::random(8));
+                } while (static::where('reference', $brand->reference)->exists());
             }
         });
     }

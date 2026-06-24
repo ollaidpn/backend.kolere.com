@@ -12,18 +12,18 @@ return new class extends Migration
             $table->id();
             $table->foreignId('entity_id')->constrained('entities')->cascadeOnDelete();
             $table->string('reference');
-            $table->string('customer_name');
-            $table->string('customer_phone')->nullable();
-            $table->string('customer_email')->nullable();
+            $table->decimal('amount', 12, 2)->default(0);
+            $table->decimal('discount', 12, 2)->default(0);
             $table->decimal('total', 12, 2)->default(0);
-            $table->string('status')->default('pending');
-            $table->string('payment_method')->default('online');
-            $table->string('payment_status')->default('pending');
+            $table->json('client_infos')->nullable();
+            $table->string('status_payment')->default('pending');
+            $table->string('status_delivery')->default('pending');
+            $table->string('status_order')->default('pending');
             $table->json('items')->nullable();
-            $table->text('notes')->nullable();
+            $table->text('note')->nullable();
             $table->timestamps();
 
-            $table->unique(['entity_id', 'reference']);
+            $table->unique('reference');
         });
     }
 
