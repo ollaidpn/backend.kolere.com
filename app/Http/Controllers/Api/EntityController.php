@@ -8,6 +8,7 @@ use App\Models\Invitation;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 class EntityController extends Controller
@@ -35,6 +36,9 @@ class EntityController extends Controller
             $request->validate([
                 'domain_id'       => 'required|exists:domains,id',
                 'name'            => 'required|string|max:255',
+                'reference'       => 'nullable|string|max:255|unique:entities,reference',
+                'subdomain'       => 'nullable|string|max:255|unique:entities,subdomain',
+                'website_status'  => 'nullable|string|max:30',
                 'logo'            => 'nullable|string',
                 'primary_color'   => 'nullable|string|max:20',
                 'secondary_color' => 'nullable|string|max:20',
@@ -52,7 +56,7 @@ class EntityController extends Controller
             Log::info('[EntityController@store] Validation passed');
 
             $entity = Entity::create($request->only([
-                'domain_id', 'name', 'logo', 'primary_color', 'secondary_color',
+                'reference', 'subdomain', 'website_status', 'domain_id', 'name', 'logo', 'primary_color', 'secondary_color',
                 'address', 'town', 'country', 'email', 'ccphone', 'phone',
             ]));
             Log::info('[EntityController@store] Entity created', ['entity_id' => $entity->id]);
@@ -102,6 +106,9 @@ class EntityController extends Controller
             $request->validate([
                 'domain_id'       => 'sometimes|exists:domains,id',
                 'name'            => 'sometimes|string|max:255',
+                'reference'       => 'nullable|string|max:255|unique:entities,reference,' . $entity->id,
+                'subdomain'       => 'nullable|string|max:255|unique:entities,subdomain,' . $entity->id,
+                'website_status'  => 'nullable|string|max:30',
                 'logo'            => 'nullable|string',
                 'primary_color'   => 'nullable|string|max:20',
                 'secondary_color' => 'nullable|string|max:20',
@@ -114,7 +121,7 @@ class EntityController extends Controller
             ]);
 
             $entity->update($request->only([
-                'domain_id', 'name', 'logo', 'primary_color', 'secondary_color',
+                'reference', 'subdomain', 'website_status', 'domain_id', 'name', 'logo', 'primary_color', 'secondary_color',
                 'address', 'town', 'country', 'email', 'ccphone', 'phone',
             ]));
             Log::info('[EntityController@update] Success', ['entity_id' => $entity->id]);
@@ -140,6 +147,50 @@ class EntityController extends Controller
             return response()->json(['message' => 'Boutique supprimée.']);
         } catch (\Exception $e) {
             Log::error('[EntityController@destroy] Error', ['message' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
+            return response()->json(['message' => 'Erreur serveur.'], 500);
+        }
+    }
+
+    public function resolve(Request $request): JsonResponse
+    {
+        try {
+            $reference = $request->query('reference');
+            $subdomain = $request->query('subdomain');
+
+            $entity = null;
+
+            if ($reference) {
+                $entity = Entity::whereRaw('LOWER(reference) = ?', [mb_strtolower(trim((string) $reference))])->with('domain')->first();
+            } elseif ($subdomain) {
+                $entity = Entity::whereRaw('LOWER(subdomain) = ?', [mb_strtolower(trim((string) $subdomain))])->with('domain')->first();
+            }
+
+            if (!$entity) {
+                return response()->json(['message' => 'Boutique introuvable'], 404);
+            }
+
+            return response()->json([
+                'data' => [
+                    'id' => $entity->id,
+                    'reference' => $entity->reference,
+                    'subdomain' => $entity->subdomain,
+                    'website_status' => $entity->website_status,
+                    'name' => $entity->name,
+                    'logo' => $entity->logo,
+                    'primary_color' => $entity->primary_color,
+                    'secondary_color' => $entity->secondary_color,
+                    'address' => $entity->address,
+                    'town' => $entity->town,
+                    'country' => $entity->country,
+                    'email' => $entity->email,
+                    'ccphone' => $entity->ccphone,
+                    'phone' => $entity->phone,
+                    'logo_url' => $entity->logo && !str_starts_with($entity->logo, 'http') ? url(\Illuminate\Support\Facades\Storage::url($entity->logo)) : $entity->logo,
+                    'domain' => $entity->domain,
+                ],
+            ]);
+        } catch (\Exception $e) {
+            Log::error('[EntityController@resolve] Error', ['message' => $e->getMessage()]);
             return response()->json(['message' => 'Erreur serveur.'], 500);
         }
     }

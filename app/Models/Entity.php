@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Models\Scopes\Searchable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Support\Str;
 
 class Entity extends Model
 {
@@ -12,6 +13,9 @@ class Entity extends Model
     use Searchable;
 
     protected $fillable = [
+        'reference',
+        'subdomain',
+        'website_status',
         'domain_id',
         'name',
         'logo',
@@ -85,5 +89,43 @@ class Entity extends Model
     public function demandes()
     {
         return $this->hasMany(Demande::class);
+    }
+
+    public function shopCategories()
+    {
+        return $this->hasMany(ShopCategory::class);
+    }
+
+    public function shopItems()
+    {
+        return $this->hasMany(ShopItem::class);
+    }
+
+    public function shopOrders()
+    {
+        return $this->hasMany(ShopOrder::class);
+    }
+
+    public function shopPromoCodes()
+    {
+        return $this->hasMany(ShopPromoCode::class);
+    }
+
+    public function shopPayments()
+    {
+        return $this->hasMany(ShopPayment::class);
+    }
+
+    protected static function booted(): void
+    {
+        static::creating(function (self $entity) {
+            if (empty($entity->reference)) {
+                do {
+                    $reference = 'ENT-' . strtoupper(Str::random(8));
+                } while (static::where('reference', $reference)->exists());
+
+                $entity->reference = $reference;
+            }
+        });
     }
 }

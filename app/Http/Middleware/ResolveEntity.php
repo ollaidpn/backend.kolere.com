@@ -16,6 +16,8 @@ class ResolveEntity
 
         $requestedEntityId = $request->header('X-Entity-ID')
             ?? $request->query('entity_id');
+        $requestedEntityReference = $request->header('X-Entity-Reference')
+            ?? $request->query('entity_reference');
 
         if ($requestedEntityId) {
             $requestedEntityId = (int) $requestedEntityId;
@@ -25,6 +27,10 @@ class ResolveEntity
             $entity = $user->currentLink()->with('entity')->first()?->entity;
         } elseif ($user instanceof \App\Models\User) {
             $entity = $user->card?->entity ?? $user->card()->with('entity')->first()?->entity;
+        }
+
+        if (!$entity && $requestedEntityReference) {
+            $entity = Entity::whereRaw('LOWER(reference) = ?', [mb_strtolower(trim((string) $requestedEntityReference))])->first();
         }
 
         if (!$entity && $requestedEntityId) {

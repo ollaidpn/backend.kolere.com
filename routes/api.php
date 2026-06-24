@@ -36,7 +36,12 @@ use App\Http\Controllers\Api\BackofficeEntityController;
 
 // ─── Authentification (publiques) ────────────────────────────────────────────
 Route::prefix('auth')->group(function () {
+    Route::post('/client/register', [AuthController::class, 'registerClient']);
+    Route::post('/client/register/request-otp', [AuthController::class, 'requestClientRegistrationOtp']);
+    Route::post('/client/register/confirm', [AuthController::class, 'confirmClientRegistration']);
     Route::post('/client/login', [AuthController::class, 'loginClient']);
+    Route::post('/client/forgot/request-otp', [AuthController::class, 'requestClientPasswordResetOtp']);
+    Route::post('/client/forgot/reset', [AuthController::class, 'resetClientPassword']);
     Route::post('/backoffice/login', [AuthController::class, 'loginManager']);
     Route::post('/admin/login', [AuthController::class, 'loginAdmin']);
 });
@@ -54,6 +59,9 @@ Route::prefix('admin-invitations')->group(function () {
     Route::post('/{token}/accept', [AdminInvitationController::class, 'accept']);
     Route::post('/{token}/refuse', [AdminInvitationController::class, 'refuse']);
 });
+
+// ─── Résolution publique de boutique ────────────────────────────────────────
+Route::get('/entities/resolve', [EntityController::class, 'resolve']);
 
 // ─── Espace Admin (table admins) ─────────────────────────────────────────────
 Route::prefix('admin')->middleware(['auth:sanctum', 'role:admin'])->group(function () {
@@ -196,6 +204,7 @@ Route::prefix('client')->middleware(['auth:sanctum', 'role:client', 'resolve.ent
     Route::post('/profile/avatar', [ClientProfileController::class, 'updateAvatar']);
     Route::put('/profile/password', [ClientProfileController::class, 'updatePassword']);
     Route::put('/profile/email', [ClientProfileController::class, 'updateEmail']);
+    Route::post('/profile/delete/request-otp', [ClientProfileController::class, 'requestDeleteOtp']);
     Route::delete('/profile', [ClientProfileController::class, 'deleteAccount']);
     Route::get('/profile/preferences', [ClientProfileController::class, 'getPreferences']);
     Route::put('/profile/preferences', [ClientProfileController::class, 'updatePreferences']);

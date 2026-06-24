@@ -8,8 +8,11 @@ use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use App\Http\Controllers\Controller;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Validator;
 
 class ClientProfileController extends Controller
@@ -240,8 +243,7 @@ class ClientProfileController extends Controller
 
             // Validation
             $validator = Validator::make($request->all(), [
-                'password' => 'required|string',
-                'confirmation' => 'required|string|in:DELETE,DELETE-MY-ACCOUNT',
+                'otp' => 'required|string|size:6',
             ]);
 
             if ($validator->fails()) {
@@ -251,9 +253,11 @@ class ClientProfileController extends Controller
                 ], 422);
             }
 
-            // Vérifier le mot de passe
-            if (!Hash::check($request->input('password'), $user->password)) {
-                return response()->json(['message' => 'Mot de passe incorrect'], 400);
+            $cacheKey = 'client_delete_otp:' . $user->id;
+            $storedOtp = Cache::get($cacheKey);
+
+            if (!$storedOtp || !hash_equals((string) $storedOtp, (string) $request->input('otp'))) {
+                return response()->json(['message' => 'Code OTP invalide ou expiré'], 400);
             }
 
             // Supprimer le compte et toutes les données associées
@@ -270,10 +274,39 @@ class ClientProfileController extends Controller
                 $user->delete();
             });
 
+            Cache::forget($cacheKey);
+
             return response()->json(['message' => 'Compte supprimé avec succès']);
         } catch (\Exception $e) {
             Log::error('[ClientProfileController@deleteAccount] Error', ['message' => $e->getMessage()]);
             return response()->json(['message' => 'Erreur lors de la suppression du compte'], 500);
+        }
+    }
+
+    public function requestDeleteOtp(Request $request): JsonResponse
+    {
+        try {
+            $user = $request->user();
+            $otp = (string) random_int(100000, 999999);
+            $cacheKey = 'client_delete_otp:' . $user->id;
+
+            Cache::put($cacheKey, $otp, now()->addMinutes(10));
+
+            try {
+                Mail::raw(
+                    "Votre code OTP de suppression de compte est : {$otp}\nCe code expire dans 10 minutes.",
+                    function ($message) use ($user) {
+                        $message->to($user->email)->subject('Code OTP de suppression de compte');
+                    }
+                );
+            } catch (\Throwable $mailError) {
+                Log::warning('[ClientProfileController@requestDeleteOtp] Mail send failed', ['message' => $mailError->getMessage()]);
+            }
+
+            return response()->json(['message' => 'Code OTP envoyé par email']);
+        } catch (\Exception $e) {
+            Log::error('[ClientProfileController@requestDeleteOtp] Error', ['message' => $e->getMessage()]);
+            return response()->json(['message' => 'Erreur lors de l\'envoi du code OTP'], 500);
         }
     }
 

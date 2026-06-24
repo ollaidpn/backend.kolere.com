@@ -75,6 +75,7 @@ class DatabaseSeeder extends Seeder
                 'domain_id'       => $domainPharmacie->id,
                 'name'            => 'Pharmacie Mame Diarra',
                 'logo'            => 'logos/pharmacie-mame-diarra.png',
+                'website_status'  => 'active',
                 'primary_color'   => '#0D9488',
                 'secondary_color' => '#F0FDFA',
                 'address'         => '12 Rue Carnot',
