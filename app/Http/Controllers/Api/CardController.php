@@ -14,12 +14,19 @@ use Illuminate\Validation\ValidationException;
 
 class CardController extends Controller
 {
-    public function scanByReference(string $reference): JsonResponse
+    private function entityId(Request $request): ?int
+    {
+        return $request->attributes->get('current_entity_id');
+    }
+
+    public function scanByReference(Request $request, string $reference): JsonResponse
     {
         try {
-            $card = Card::with(['user', 'cardType'])
-                        ->where('reference', $reference)
-                        ->firstOrFail();
+            $query = Card::with(['user', 'cardType'])->where('reference', $reference);
+            if ($entityId = $this->entityId($request)) {
+                $query->where('entity_id', $entityId);
+            }
+            $card = $query->firstOrFail();
 
             return response()->json([
                 'data' => [
@@ -48,6 +55,9 @@ class CardController extends Controller
     {
         try {
             $query = Card::with(['user', 'cardType', 'cardCredits']);
+            if ($entityId = $this->entityId($request)) {
+                $query->where('entity_id', $entityId);
+            }
             
             // Filtrer par statut
             if ($request->status) {
@@ -82,8 +92,11 @@ class CardController extends Controller
     public function show($id): JsonResponse
     {
         try {
-            $card = Card::with(['user', 'cardType', 'cardCredits', 'orders'])
-                       ->findOrFail($id);
+            $query = Card::with(['user', 'cardType', 'cardCredits', 'orders']);
+            if ($entityId = request()->attributes->get('current_entity_id')) {
+                $query->where('entity_id', $entityId);
+            }
+            $card = $query->findOrFail($id);
             
             return response()->json(['data' => $card]);
         } catch (\Exception $e) {
@@ -101,18 +114,29 @@ class CardController extends Controller
                 'initial_points' => 'nullable|integer|min:0',
             ]);
 
-            return DB::transaction(function () use ($validated) {
+            return DB::transaction(function () use ($validated, $request) {
                 // Vérifier si l'utilisateur n'a pas déjà une carte
-                $existingCard = Card::where('user_id', $validated['user_id'])->first();
+                $existingCardQuery = Card::where('user_id', $validated['user_id']);
+                if ($entityId = $this->entityId($request)) {
+                    $existingCardQuery->where('entity_id', $entityId);
+                }
+                $existingCard = $existingCardQuery->first();
                 if ($existingCard) {
                     throw ValidationException::withMessages([
                         'user_id' => ['Cet utilisateur possède déjà une carte de fidélité']
                     ]);
                 }
 
+                $entityId = $this->entityId($request);
+                if (!$entityId) {
+                    throw ValidationException::withMessages([
+                        'entity_id' => ['Entité courante introuvable']
+                    ]);
+                }
+
                 $card = Card::create([
                     'user_id' => $validated['user_id'],
-                    'entity_id' => 1, // ID de l'entité pharmacie
+                    'entity_id' => $entityId,
                     'card_type_id' => $validated['card_type_id'],
                     'number' => 'CARD-' . str_pad($validated['user_id'], 8, '0', STR_PAD_LEFT),
                     'points' => $validated['initial_points'] ?? 0,
@@ -120,8 +144,9 @@ class CardController extends Controller
                 ]);
 
                 // Créer un crédit de points si des points initiaux sont fournis
-                if ($validated['initial_points'] > 0) {
+                if (($validated['initial_points'] ?? 0) > 0) {
                     CardCredit::create([
+                        'entity_id' => $card->entity_id,
                         'card_id' => $card->id,
                         'points' => $validated['initial_points'],
                         'type' => 'initial',
@@ -157,12 +182,17 @@ class CardController extends Controller
             ]);
 
             return DB::transaction(function () use ($validated, $id) {
-                $card = Card::findOrFail($id);
+                $query = Card::query()->whereKey($id);
+                if ($entityId = request()->attributes->get('current_entity_id')) {
+                    $query->where('entity_id', $entityId);
+                }
+                $card = $query->firstOrFail();
                 
                 $card->increment('credit', $validated['points']);
 
                 // Créer un crédit de points
                 CardCredit::create([
+                    'entity_id' => $card->entity_id,
                     'card_id' => $card->id,
                     'points' => $validated['points'],
                     'credit' => $validated['points'],
@@ -199,7 +229,11 @@ class CardController extends Controller
             ]);
 
             return DB::transaction(function () use ($validated, $id) {
-                $card = Card::findOrFail($id);
+                $query = Card::query()->whereKey($id);
+                if ($entityId = request()->attributes->get('current_entity_id')) {
+                    $query->where('entity_id', $entityId);
+                }
+                $card = $query->firstOrFail();
                 
                 // Vérifier si la carte a suffisamment de points
                 if ($card->points < $validated['points']) {
@@ -212,6 +246,7 @@ class CardController extends Controller
 
                 // Créer un débit de points
                 CardCredit::create([
+                    'entity_id' => $card->entity_id,
                     'card_id' => $card->id,
                     'points' => -$validated['points'],
                     'credit' => -$validated['points'],
@@ -242,12 +277,19 @@ class CardController extends Controller
     public function getStats(): JsonResponse
     {
         try {
+            $entityId = request()->attributes->get('current_entity_id');
+
+            $cardsQuery = Card::query();
+            if ($entityId) {
+                $cardsQuery->where('entity_id', $entityId);
+            }
+
             $stats = [
-                'total_cards' => Card::count(),
-                'active_cards' => Card::where('status', 'active')->count(),
-                'total_points' => Card::sum('points'),
-                'average_points' => Card::avg('points'),
-                'cards_by_type' => Card::join('card_types', 'cards.card_type_id', '=', 'card_types.id')
+                'total_cards' => (clone $cardsQuery)->count(),
+                'active_cards' => (clone $cardsQuery)->where('status', 'active')->count(),
+                'total_points' => (clone $cardsQuery)->sum('credit'),
+                'average_points' => (clone $cardsQuery)->avg('credit'),
+                'cards_by_type' => (clone $cardsQuery)->join('card_types', 'cards.card_type_id', '=', 'card_types.id')
                                     ->selectRaw('card_types.name, COUNT(*) as count')
                                     ->groupBy('card_types.name')
                                     ->get(),
@@ -263,8 +305,17 @@ class CardController extends Controller
     public function getHistory($id): JsonResponse
     {
         try {
-            $card = Card::findOrFail($id);
-            $credits = CardCredit::where('card_id', $id)
+            $query = Card::query();
+            if ($entityId = request()->attributes->get('current_entity_id')) {
+                $query->where('entity_id', $entityId);
+            }
+            $card = $query->findOrFail($id);
+
+            $creditsQuery = CardCredit::where('card_id', $id);
+            if ($entityId = request()->attributes->get('current_entity_id')) {
+                $creditsQuery->where('entity_id', $entityId);
+            }
+            $credits = $creditsQuery
                                 ->orderBy('created_at', 'desc')
                                 ->get();
 

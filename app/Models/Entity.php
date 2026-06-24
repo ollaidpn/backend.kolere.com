@@ -42,6 +42,16 @@ class Entity extends Model
         return $this->hasMany(Card::class);
     }
 
+    public function orders()
+    {
+        return $this->hasMany(Order::class);
+    }
+
+    public function cardCredits()
+    {
+        return $this->hasMany(CardCredit::class);
+    }
+
     public function domain()
     {
         return $this->belongsTo(Domain::class);
@@ -54,7 +64,7 @@ class Entity extends Model
 
     public function links()
     {
-        return $this->hasMany(Link::class);
+        return $this->hasOne(Link::class);
     }
 
     public function appOrders()
@@ -65,5 +75,15 @@ class Entity extends Model
     public function discounts()
     {
         return $this->hasMany(Discount::class);
+    }
+
+    public function rewards()
+    {
+        return $this->hasMany(Reward::class);
+    }
+
+    public function demandes()
+    {
+        return $this->hasMany(Demande::class);
     }
 }

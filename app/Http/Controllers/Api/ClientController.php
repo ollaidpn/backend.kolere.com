@@ -13,9 +13,15 @@ use Illuminate\Validation\ValidationException;
 
 class ClientController extends Controller
 {
+    private function entityId(Request $request): ?int
+    {
+        return $request->attributes->get('current_entity_id');
+    }
+
     public function index(Request $request): JsonResponse
     {
         try {
+            $entityId = $this->entityId($request);
             $query = User::query();
             
             // Recherche par nom ou email
@@ -26,6 +32,10 @@ class ClientController extends Controller
                       ->orWhere('email', 'like', "%{$search}%")
                       ->orWhere('phone', 'like', "%{$search}%");
                 });
+            }
+
+            if ($entityId) {
+                $query->whereHas('card', fn ($cardQuery) => $cardQuery->where('entity_id', $entityId));
             }
             
             // Pagination
@@ -59,8 +69,11 @@ class ClientController extends Controller
     public function show($id): JsonResponse
     {
         try {
-            $client = User::with(['card.cardCredits', 'orders'])
-                        ->findOrFail($id);
+            $query = User::with(['card.cardCredits', 'orders']);
+            if ($entityId = request()->attributes->get('current_entity_id')) {
+                $query->whereHas('card', fn ($cardQuery) => $cardQuery->where('entity_id', $entityId));
+            }
+            $client = $query->findOrFail($id);
 
             $data = $client->toArray();
             if ($client->avatar) {
@@ -98,10 +111,15 @@ class ClientController extends Controller
                 'password' => $validated['password'] ? Hash::make($validated['password']) : Hash::make('password123'),
             ]);
 
+            $entityId = $this->entityId($request);
+            if (!$entityId) {
+                return response()->json(['message' => 'Entité courante introuvable'], 422);
+            }
+
             // Créer la carte de fidélité
             $card = Card::create([
                 'user_id' => $client->id,
-                'entity_id' => 1, // ID de l'entité pharmacie
+                'entity_id' => $entityId,
                 'card_type_id' => 1, // Type de carte par défaut
                 'number' => 'CARD-' . str_pad($client->id, 8, '0', STR_PAD_LEFT),
                 'points' => 0,
@@ -125,7 +143,11 @@ class ClientController extends Controller
     public function update(Request $request, $id): JsonResponse
     {
         try {
-            $client = User::findOrFail($id);
+            $query = User::query();
+            if ($entityId = $this->entityId($request)) {
+                $query->whereHas('card', fn ($cardQuery) => $cardQuery->where('entity_id', $entityId));
+            }
+            $client = $query->findOrFail($id);
             
             $validated = $request->validate([
                 'name' => 'required|string|max:255',
@@ -153,7 +175,11 @@ class ClientController extends Controller
     public function destroy($id): JsonResponse
     {
         try {
-            $client = User::findOrFail($id);
+            $query = User::query();
+            if ($entityId = request()->attributes->get('current_entity_id')) {
+                $query->whereHas('card', fn ($cardQuery) => $cardQuery->where('entity_id', $entityId));
+            }
+            $client = $query->findOrFail($id);
             
             // Vérifier si le client a des commandes
             if ($client->orders()->count() > 0) {
@@ -181,13 +207,28 @@ class ClientController extends Controller
     public function getStats(): JsonResponse
     {
         try {
+            $entityId = request()->attributes->get('current_entity_id');
+
+            $clientsQuery = User::query();
+            if ($entityId) {
+                $clientsQuery->whereHas('card', fn ($cardQuery) => $cardQuery->where('entity_id', $entityId));
+            }
+
+            $cardsQuery = Card::query();
+            if ($entityId) {
+                $cardsQuery->where('entity_id', $entityId);
+            }
+
             $stats = [
-                'total_clients' => User::count(),
-                'active_clients' => User::whereHas('card', function($query) {
+                'total_clients' => $clientsQuery->count(),
+                'active_clients' => (clone $clientsQuery)->whereHas('card', function($query) use ($entityId) {
                     $query->where('status', 'active');
+                    if ($entityId) {
+                        $query->where('entity_id', $entityId);
+                    }
                 })->count(),
-                'total_points' => Card::sum('points'),
-                'new_this_month' => User::whereMonth('created_at', now()->month)
+                'total_points' => $cardsQuery->sum('credit'),
+                'new_this_month' => (clone $clientsQuery)->whereMonth('created_at', now()->month)
                                        ->whereYear('created_at', now()->year)
                                        ->count(),
             ];

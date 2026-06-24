@@ -21,6 +21,7 @@ class DashboardController extends Controller
             Log::info('[DashboardController@stats] Entities counted', ['total' => $totalEntities]);
 
             $totalAdmins = Admin::count();
+            $totalAppOrders = \App\Models\AppOrder::count();
 
             $activeSubscriptions = AppSuscription::with('pricing')
                 ->get()
@@ -47,6 +48,11 @@ class DashboardController extends Controller
                 ->limit(5)
                 ->get();
 
+            $recentAppOrders = \App\Models\AppOrder::with(['entity.domain', 'appPayments'])
+                ->orderBy('created_at', 'desc')
+                ->limit(5)
+                ->get();
+
             $subscriptionsByPricing = AppSuscription::with('pricing')
                 ->get()
                 ->groupBy(fn($sub) => $sub->pricing?->name ?? 'Sans forfait')
@@ -59,10 +65,12 @@ class DashboardController extends Controller
                 'data' => [
                     'total_entities' => $totalEntities,
                     'total_admins' => $totalAdmins,
+                    'total_app_orders' => $totalAppOrders,
                     'active_subscriptions' => $activeSubscriptions,
                     'total_payments_amount' => $totalPaymentsAmount,
                     'recent_subscriptions' => $recentSubscriptions,
                     'recent_payments' => $recentPayments,
+                    'recent_app_orders' => $recentAppOrders,
                     'subscriptions_by_pricing' => $subscriptionsByPricing,
                 ],
             ]);

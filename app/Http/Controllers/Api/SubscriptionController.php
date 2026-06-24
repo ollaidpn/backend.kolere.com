@@ -14,6 +14,11 @@ class SubscriptionController extends Controller
         Log::info('[SubscriptionController@index] Fetching subscriptions');
         try {
             $subscriptions = AppSuscription::with(['entity.domain', 'pricing', 'appPayments'])
+                ->when($request->search, function ($query, $search) {
+                    $query->whereHas('entity', function ($q) use ($search) {
+                        $q->where('name', 'like', "%{$search}%");
+                    });
+                })
                 ->orderBy('created_at', 'desc')
                 ->get();
 

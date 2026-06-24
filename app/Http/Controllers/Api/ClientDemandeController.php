@@ -11,6 +11,11 @@ use Illuminate\Support\Facades\Storage;
 
 class ClientDemandeController extends Controller
 {
+    private function entityId(Request $request): ?int
+    {
+        return $request->attributes->get('current_entity_id');
+    }
+
     private function formatDemande(Demande $d): array
     {
         return [
@@ -29,7 +34,11 @@ class ClientDemandeController extends Controller
     {
         try {
             $user = $request->user();
-            $demandes = Demande::where('user_id', $user->id)
+            $query = Demande::where('user_id', $user->id);
+            if ($entityId = $this->entityId($request)) {
+                $query->where('entity_id', $entityId);
+            }
+            $demandes = $query
                 ->orderBy('created_at', 'desc')
                 ->get()
                 ->map(fn($d) => $this->formatDemande($d));
@@ -58,8 +67,14 @@ class ClientDemandeController extends Controller
                 return response()->json(['message' => 'Veuillez ajouter une description ou une photo'], 422);
             }
 
+            $entityId = $this->entityId($request);
+            if (!$entityId) {
+                return response()->json(['message' => 'Entité courante introuvable'], 422);
+            }
+
             $demande = Demande::create([
                 'user_id'     => $request->user()->id,
+                'entity_id'   => $entityId,
                 'description' => $validated['description'] ?? null,
                 'photo'       => $photoPath,
                 'status'      => 'pending',
@@ -80,7 +95,11 @@ class ClientDemandeController extends Controller
     public function show(Request $request, $id): JsonResponse
     {
         try {
-            $d = Demande::where('user_id', $request->user()->id)->findOrFail($id);
+            $query = Demande::where('user_id', $request->user()->id);
+            if ($entityId = $this->entityId($request)) {
+                $query->where('entity_id', $entityId);
+            }
+            $d = $query->findOrFail($id);
             return response()->json(['data' => $this->formatDemande($d)]);
         } catch (\Exception $e) {
             return response()->json(['message' => 'Demande introuvable'], 404);

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Entity;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 
@@ -10,7 +11,7 @@ class Demande extends Model
     use HasFactory;
 
     protected $fillable = [
-        'user_id', 'description', 'photo', 'status',
+        'user_id', 'entity_id', 'description', 'photo', 'status',
         'manager_comment', 'manager_amount', 'responded_at',
     ];
 
@@ -22,5 +23,10 @@ class Demande extends Model
     public function user()
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function entity()
+    {
+        return $this->belongsTo(Entity::class);
     }
 }

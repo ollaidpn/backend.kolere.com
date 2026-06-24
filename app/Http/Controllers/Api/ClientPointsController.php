@@ -13,12 +13,22 @@ use Carbon\Carbon;
 
 class ClientPointsController extends Controller
 {
+    private function entityId(Request $request): ?int
+    {
+        return $request->attributes->get('current_entity_id');
+    }
+
     public function index(Request $request): JsonResponse
     {
         try {
             $user = $request->user();
 
-            $card = Card::where('user_id', $user->id)->with(['cardType'])->first();
+            $cardQuery = Card::where('user_id', $user->id)->with(['cardType']);
+            if ($entityId = $this->entityId($request)) {
+                $cardQuery->where('entity_id', $entityId);
+            }
+
+            $card = $cardQuery->first();
 
             if (!$card) {
                 return response()->json(['message' => 'Aucune carte de fidélité trouvée', 'data' => null], 404);
@@ -79,10 +89,19 @@ class ClientPointsController extends Controller
     {
         try {
             $user = $request->user();
-            $card = Card::where('user_id', $user->id)->first();
+            $cardQuery = Card::where('user_id', $user->id);
+            if ($entityId = $this->entityId($request)) {
+                $cardQuery->where('entity_id', $entityId);
+            }
+            $card = $cardQuery->first();
             $points = $card ? ($card->credit ?? 0) : 0;
 
-            $rewards = Reward::where('status', 'active')
+            $rewardsQuery = Reward::where('status', 'active');
+            if ($entityId = $this->entityId($request)) {
+                $rewardsQuery->where('entity_id', $entityId);
+            }
+
+            $rewards = $rewardsQuery
                 ->orderBy('points_required')
                 ->get()
                 ->map(fn($r) => [
@@ -104,8 +123,17 @@ class ClientPointsController extends Controller
     {
         try {
             $user   = $request->user();
-            $card   = Card::where('user_id', $user->id)->firstOrFail();
-            $reward = Reward::where('status', 'active')->findOrFail($id);
+            $cardQuery = Card::where('user_id', $user->id);
+            if ($entityId = $this->entityId($request)) {
+                $cardQuery->where('entity_id', $entityId);
+            }
+            $card = $cardQuery->firstOrFail();
+
+            $rewardQuery = Reward::where('status', 'active');
+            if ($entityId = $this->entityId($request)) {
+                $rewardQuery->where('entity_id', $entityId);
+            }
+            $reward = $rewardQuery->findOrFail($id);
 
             $points = $card->credit ?? 0;
             if ($points < $reward->points_required) {
@@ -116,6 +144,7 @@ class ClientPointsController extends Controller
 
             try {
                 CardCredit::create([
+                    'entity_id' => $card->entity_id,
                     'card_id'     => $card->id,
                     'order_id'    => null,
                     'amount'      => $reward->points_required,
@@ -125,6 +154,7 @@ class ClientPointsController extends Controller
                 ]);
             } catch (\Exception $e) {
                 $cc = new CardCredit();
+                $cc->entity_id = $card->entity_id;
                 $cc->card_id  = $card->id;
                 $cc->order_id = null;
                 $cc->amount   = $reward->points_required;

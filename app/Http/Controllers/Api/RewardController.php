@@ -11,10 +11,18 @@ use Illuminate\Validation\ValidationException;
 
 class RewardController extends Controller
 {
+    private function currentEntityId(Request $request): ?int
+    {
+        return $request->attributes->get('current_entity_id');
+    }
+
     public function index(Request $request): JsonResponse
     {
         try {
             $query = Reward::query();
+            if ($entityId = $this->currentEntityId($request)) {
+                $query->where('entity_id', $entityId);
+            }
 
             if ($request->status) {
                 $query->where('status', $request->status);
@@ -45,7 +53,12 @@ class RewardController extends Controller
                 'status' => 'in:active,inactive',
             ]);
 
-            $reward = Reward::create($validated);
+            $entityId = $this->currentEntityId($request);
+            if (!$entityId) {
+                return response()->json(['message' => 'Entité courante introuvable'], 422);
+            }
+
+            $reward = Reward::create($validated + ['entity_id' => $entityId]);
 
             Log::info('[RewardController@store] Reward created', ['reward_id' => $reward->id]);
 
@@ -61,7 +74,11 @@ class RewardController extends Controller
     public function update(Request $request, $id): JsonResponse
     {
         try {
-            $reward = Reward::findOrFail($id);
+            $query = Reward::query()->whereKey($id);
+            if ($entityId = $this->currentEntityId($request)) {
+                $query->where('entity_id', $entityId);
+            }
+            $reward = $query->firstOrFail();
 
             $validated = $request->validate([
                 'name' => 'required|string|max:255',
@@ -88,7 +105,11 @@ class RewardController extends Controller
     public function destroy($id): JsonResponse
     {
         try {
-            $reward = Reward::findOrFail($id);
+            $query = Reward::query()->whereKey($id);
+            if ($entityId = request()->attributes->get('current_entity_id')) {
+                $query->where('entity_id', $entityId);
+            }
+            $reward = $query->firstOrFail();
             $reward->delete();
 
             Log::info('[RewardController@destroy] Reward deleted', ['reward_id' => $id]);
@@ -103,7 +124,11 @@ class RewardController extends Controller
     public function toggleStatus($id): JsonResponse
     {
         try {
-            $reward = Reward::findOrFail($id);
+            $query = Reward::query()->whereKey($id);
+            if ($entityId = request()->attributes->get('current_entity_id')) {
+                $query->where('entity_id', $entityId);
+            }
+            $reward = $query->firstOrFail();
             $reward->status = $reward->status === 'active' ? 'inactive' : 'active';
             $reward->save();
 

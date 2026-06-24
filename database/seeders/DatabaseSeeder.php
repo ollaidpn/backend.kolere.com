@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Schema;
 use App\Models\Domain;
+use App\Models\Admin;
 use App\Models\Entity;
 use App\Models\Manager;
 use App\Models\Link;
@@ -44,6 +45,21 @@ class DatabaseSeeder extends Seeder
 
         // ── Everything inside a transaction ──
         DB::transaction(function () use ($password) {
+
+            // ╔══════════════════════════════════════╗
+            // ║  0. ADMIN PLATEFORME                 ║
+            // ╚══════════════════════════════════════╝
+            Admin::updateOrCreate(
+                ['email' => 'dev@ollaid.com'],
+                [
+                    'name'      => 'Dev OLLAID',
+                    'password'  => $password,
+                    'status'    => 'active',
+                    'reference' => 'AD-DEV',
+                    'ccphone'   => '+221',
+                    'phone'     => '77 000 00 00',
+                ]
+            );
 
             // ╔══════════════════════════════════════╗
             // ║  1. DOMAINS                          ║

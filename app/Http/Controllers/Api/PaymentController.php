@@ -18,6 +18,12 @@ class PaymentController extends Controller
                 'appSuscription.pricing',
                 'appOrder.entity.domain',
             ])
+                ->when($request->search, function ($query, $search) {
+                    $query->whereHas('appOrder', function ($q) use ($search) {
+                        $q->where('reference', 'like', "%{$search}%")
+                          ->orWhere('name', 'like', "%{$search}%");
+                    });
+                })
                 ->orderBy('created_at', 'desc')
                 ->get();
 

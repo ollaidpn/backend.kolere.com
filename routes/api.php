@@ -13,6 +13,7 @@ use App\Http\Controllers\Api\AdminInvitationController;
 use App\Http\Controllers\Api\SubscriptionController;
 use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\DashboardController;
+use App\Http\Controllers\Api\AdminAppOrderController;
 use App\Http\Controllers\Api\ClientController;
 use App\Http\Controllers\Api\SaleController;
 use App\Http\Controllers\Api\CardController;
@@ -55,10 +56,10 @@ Route::prefix('admin-invitations')->group(function () {
 });
 
 // ─── Espace Admin (table admins) ─────────────────────────────────────────────
-Route::prefix('admin')->group(function () {
+Route::prefix('admin')->middleware(['auth:sanctum', 'role:admin'])->group(function () {
     Route::get('/me', function (Request $request) {
         return response()->json(['data' => $request->user()]);
-    })->middleware('auth:sanctum');
+    });
 
     // Domaines
     Route::get('/domains', [DomainController::class, 'index']);
@@ -98,13 +99,14 @@ Route::prefix('admin')->group(function () {
 
     // Payments
     Route::get('/payments', [PaymentController::class, 'index']);
+    Route::get('/app-orders', [AdminAppOrderController::class, 'index']);
 
     // Dashboard stats
     Route::get('/dashboard/stats', [DashboardController::class, 'stats']);
 });
 
 // ─── Espace Backoffice (pharmacie) ───────────────────────────────────────────
-Route::prefix('backoffice')->middleware('auth:sanctum')->group(function () {
+Route::prefix('backoffice')->middleware(['auth:sanctum', 'role:manager', 'resolve.entity'])->group(function () {
     Route::get('/me', function (Request $request) {
         return response()->json(['data' => $request->user()]);
     });
@@ -161,14 +163,14 @@ Route::prefix('backoffice')->middleware('auth:sanctum')->group(function () {
 });
 
 // ─── Espace Manager (table managers) ─────────────────────────────────────────
-Route::prefix('manager')->group(function () {
+Route::prefix('manager')->middleware(['auth:sanctum', 'role:manager'])->group(function () {
     Route::get('/me', function (Request $request) {
         return response()->json(['data' => $request->user()]);
-    })->middleware('auth:sanctum');
+    });
 });
 
 // ─── Espace Client (table users) ────────────────────────────────────────────
-Route::prefix('client')->middleware('auth:sanctum')->group(function () {
+Route::prefix('client')->middleware(['auth:sanctum', 'role:client', 'resolve.entity'])->group(function () {
     Route::get('/me', function (Request $request) {
         return response()->json(['data' => $request->user()]);
     });

@@ -13,15 +13,22 @@ use Carbon\Carbon;
 
 class ClientPromotionsController extends Controller
 {
+    private function entityId(Request $request): ?int
+    {
+        return $request->attributes->get('current_entity_id');
+    }
+
     public function index(Request $request): JsonResponse
     {
         try {
             $user = $request->user();
             
             // Récupérer la carte du client
-            $card = Card::where('user_id', $user->id)
-                           ->with(['cardType'])
-                           ->first();
+            $cardQuery = Card::where('user_id', $user->id)->with(['cardType']);
+            if ($entityId = $this->entityId($request)) {
+                $cardQuery->where('entity_id', $entityId);
+            }
+            $card = $cardQuery->first();
 
             if (!$card) {
                 return response()->json([
@@ -32,6 +39,7 @@ class ClientPromotionsController extends Controller
 
             // Promotions actives pour cette carte
             $promotions = Discount::where('card_id', $card->id)
+                               ->when($entityId = $this->entityId($request), fn ($query) => $query->where('entity_id', $entityId))
                                ->where('status', 'active')
                                ->where('expiration', '>', now())
                                ->orderBy('created_at', 'desc')
@@ -73,8 +81,17 @@ class ClientPromotionsController extends Controller
         try {
             $user = $request->user();
             
-            $card = Card::where('user_id', $user->id)->first();
-            $discount = Discount::find($id);
+            $cardQuery = Card::where('user_id', $user->id);
+            if ($entityId = $this->entityId($request)) {
+                $cardQuery->where('entity_id', $entityId);
+            }
+            $card = $cardQuery->first();
+
+            $discountQuery = Discount::query();
+            if ($entityId = $this->entityId($request)) {
+                $discountQuery->where('entity_id', $entityId);
+            }
+            $discount = $discountQuery->find($id);
 
             if (!$card || !$discount) {
                 return response()->json(['message' => 'Promotion non trouvée'], 404);
@@ -113,7 +130,15 @@ class ClientPromotionsController extends Controller
     {
         try {
             $user = $request->user();
-            $card = Card::where('user_id', $user->id)->first();
+            $cardQuery = Card::where('user_id', $user->id);
+            if ($entityId = $this->entityId($request)) {
+                $cardQuery->where('entity_id', $entityId);
+            }
+            $card = $cardQuery->first();
+
+            if (!$card) {
+                return response()->json(['data' => []]);
+            }
 
             // Promotions mises en avant selon le type de carte
             $featuredPromotions = $this->getFeaturedByCardType($card->cardType->name ?? 'Bronze');

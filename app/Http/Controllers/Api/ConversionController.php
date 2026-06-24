@@ -14,6 +14,11 @@ use Illuminate\Validation\ValidationException;
 
 class ConversionController extends Controller
 {
+    private function entityId(Request $request): ?int
+    {
+        return $request->attributes->get('current_entity_id');
+    }
+
     /**
      * Liste des conversions (CardCredit de type redeemed).
      */
@@ -24,6 +29,10 @@ class ConversionController extends Controller
                 $query = CardCredit::with(['card.user'])
                     ->where('type', 'redeemed')
                     ->orderBy('created_at', 'desc');
+
+                if ($entityId = $this->entityId($request)) {
+                    $query->where('entity_id', $entityId);
+                }
 
                 if ($request->search) {
                     $search = $request->search;
@@ -88,14 +97,20 @@ class ConversionController extends Controller
                 'reward_id'      => 'required|integer|exists:rewards,id',
             ]);
 
-            return DB::transaction(function () use ($validated) {
+            return DB::transaction(function () use ($validated, $request) {
                 // Trouver la carte par référence
-                $card = Card::with('user')
-                    ->where('reference', $validated['card_reference'])
-                    ->firstOrFail();
+                $cardQuery = Card::with('user')->where('reference', $validated['card_reference']);
+                if ($entityId = $this->entityId($request)) {
+                    $cardQuery->where('entity_id', $entityId);
+                }
+                $card = $cardQuery->firstOrFail();
 
                 // Trouver la récompense
-                $reward = Reward::findOrFail($validated['reward_id']);
+                $rewardQuery = Reward::query();
+                if ($entityId = $this->entityId($request)) {
+                    $rewardQuery->where('entity_id', $entityId);
+                }
+                $reward = $rewardQuery->findOrFail($validated['reward_id']);
 
                 if ($reward->status !== 'active') {
                     throw ValidationException::withMessages([
@@ -123,6 +138,7 @@ class ConversionController extends Controller
                 // Créer l'entrée dans l'historique (résilient si colonnes pas encore migrées)
                 try {
                     $cc = CardCredit::create([
+                        'entity_id'   => $card->entity_id,
                         'card_id'     => $card->id,
                         'order_id'    => null,
                         'amount'      => $reward->points_required,
@@ -134,6 +150,7 @@ class ConversionController extends Controller
                     ]);
                 } catch (\Illuminate\Database\QueryException $qe) {
                     $cc = new CardCredit();
+                    $cc->entity_id = $card->entity_id;
                     $cc->card_id  = $card->id;
                     $cc->order_id = 0;
                     $cc->amount   = $reward->points_required;
@@ -180,16 +197,33 @@ class ConversionController extends Controller
      */
     public function stats(): JsonResponse
     {
+        $entityId = request()->attributes->get('current_entity_id');
         $totalConversions = 0;
         $totalPointsConverted = 0;
         $conversionsThisMonth = 0;
 
-        try { $totalConversions = CardCredit::where('type', 'redeemed')->count(); } catch (\Exception $e) {}
-        try { $totalPointsConverted = abs((int) CardCredit::where('type', 'redeemed')->sum('credit')); } catch (\Exception $e) {}
         try {
-            $conversionsThisMonth = CardCredit::where('type', 'redeemed')
+            $query = CardCredit::where('type', 'redeemed');
+            if ($entityId) {
+                $query->where('entity_id', $entityId);
+            }
+            $totalConversions = $query->count();
+        } catch (\Exception $e) {}
+        try {
+            $query = CardCredit::where('type', 'redeemed');
+            if ($entityId) {
+                $query->where('entity_id', $entityId);
+            }
+            $totalPointsConverted = abs((int) $query->sum('credit'));
+        } catch (\Exception $e) {}
+        try {
+            $query = CardCredit::where('type', 'redeemed')
                 ->where('created_at', '>=', now()->startOfMonth())
-                ->count();
+                ;
+            if ($entityId) {
+                $query->where('entity_id', $entityId);
+            }
+            $conversionsThisMonth = $query->count();
         } catch (\Exception $e) {}
 
         return response()->json(['data' => [

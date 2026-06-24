@@ -99,12 +99,14 @@ class InvitationController extends Controller
                 Log::info('[InvitationController@accept] Manager already exists', ['manager_id' => $manager->id]);
             }
 
-            Link::create([
-                'manager_id' => $manager->id,
-                'entity_id'  => $invitation->entity_id,
-                'is_admin'   => $invitation->is_admin,
-            ]);
-            Log::info('[InvitationController@accept] Link created');
+            Link::updateOrCreate(
+                ['manager_id' => $manager->id],
+                [
+                    'entity_id' => $invitation->entity_id,
+                    'is_admin'  => $invitation->is_admin,
+                ]
+            );
+            Log::info('[InvitationController@accept] Link upserted');
 
             $invitation->update(['status' => 'accepted']);
             Log::info('[InvitationController@accept] Success');

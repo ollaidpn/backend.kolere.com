@@ -16,10 +16,18 @@ use Illuminate\Validation\ValidationException;
 
 class SaleController extends Controller
 {
+    private function entityId(Request $request): ?int
+    {
+        return $request->attributes->get('current_entity_id');
+    }
+
     public function index(Request $request): JsonResponse
     {
         try {
             $query = Order::with(['user', 'card']);
+            if ($entityId = $this->entityId($request)) {
+                $query->where('entity_id', $entityId);
+            }
 
             if ($request->search) {
                 $search = $request->search;
@@ -71,11 +79,27 @@ class SaleController extends Controller
 
             return DB::transaction(function () use ($validated, $request) {
                 $client = User::findOrFail($validated['client_id']);
-                $card   = $client->card;
+                $entityId = $this->entityId($request);
+
+                $card = Card::where('user_id', $client->id)
+                    ->where('entity_id', $entityId)
+                    ->first();
 
                 if (!$card) {
                     throw ValidationException::withMessages([
                         'client_id' => ['Ce client n\'a pas de carte de fidélité'],
+                    ]);
+                }
+
+                if (!$entityId) {
+                    throw ValidationException::withMessages([
+                        'entity_id' => ['Entité courante introuvable'],
+                    ]);
+                }
+
+                if ((int) $card->entity_id !== (int) $entityId) {
+                    throw ValidationException::withMessages([
+                        'client_id' => ['Ce client n\'appartient pas à la boutique active'],
                     ]);
                 }
 
@@ -89,6 +113,7 @@ class SaleController extends Controller
                 }
 
                 $order = Order::create([
+                    'entity_id'       => $entityId,
                     'user_id'          => $client->id,
                     'card_id'          => $card->id,
                     'reference'        => 'SALE-' . date('YmdHis') . '-' . rand(1000, 9999),
@@ -110,6 +135,7 @@ class SaleController extends Controller
                 // Historique de points (résilient si colonnes pas encore migrées)
                 try {
                     CardCredit::create([
+                        'entity_id' => $card->entity_id,
                         'card_id'     => $card->id,
                         'order_id'    => $order->id,
                         'amount'      => $pointsEarned,
@@ -120,6 +146,7 @@ class SaleController extends Controller
                     ]);
                 } catch (\Illuminate\Database\QueryException $qe) {
                     $cc = new CardCredit();
+                    $cc->entity_id = $card->entity_id;
                     $cc->card_id  = $card->id;
                     $cc->order_id = $order->id;
                     $cc->amount   = $pointsEarned;
@@ -150,7 +177,11 @@ class SaleController extends Controller
     public function show($id): JsonResponse
     {
         try {
-            $sale = Order::with(['user', 'card'])->findOrFail($id);
+            $query = Order::with(['user', 'card']);
+            if ($entityId = request()->attributes->get('current_entity_id')) {
+                $query->where('entity_id', $entityId);
+            }
+            $sale = $query->findOrFail($id);
             return response()->json(['data' => $sale]);
         } catch (\Exception $e) {
             Log::error('[SaleController@show] Error', ['id' => $id, 'message' => $e->getMessage()]);
@@ -161,17 +192,23 @@ class SaleController extends Controller
     public function getStats(): JsonResponse
     {
         try {
+            $entityId = request()->attributes->get('current_entity_id');
             $today     = now()->format('Y-m-d');
             $thisMonth = now()->startOfMonth();
 
+            $ordersQuery = Order::query();
+            if ($entityId) {
+                $ordersQuery->where('entity_id', $entityId);
+            }
+
             $stats = [
-                'today_sales'              => (float) Order::whereDate('created_at', $today)->sum('amount'),
-                'today_sales_count'        => Order::whereDate('created_at', $today)->count(),
-                'this_month_sales'         => (float) Order::where('created_at', '>=', $thisMonth)->sum('amount'),
-                'this_month_sales_count'   => Order::where('created_at', '>=', $thisMonth)->count(),
-                'total_points_distributed' => (int) Order::sum('points_earned'),
-                'total_sales'              => (float) Order::sum('amount'),
-                'total_sales_count'        => Order::count(),
+                'today_sales'              => (float) (clone $ordersQuery)->whereDate('created_at', $today)->sum('amount'),
+                'today_sales_count'        => (clone $ordersQuery)->whereDate('created_at', $today)->count(),
+                'this_month_sales'         => (float) (clone $ordersQuery)->where('created_at', '>=', $thisMonth)->sum('amount'),
+                'this_month_sales_count'   => (clone $ordersQuery)->where('created_at', '>=', $thisMonth)->count(),
+                'total_points_distributed' => (int) (clone $ordersQuery)->sum('points_earned'),
+                'total_sales'              => (float) (clone $ordersQuery)->sum('amount'),
+                'total_sales_count'        => (clone $ordersQuery)->count(),
             ];
 
             return response()->json(['data' => $stats]);
@@ -184,7 +221,12 @@ class SaleController extends Controller
     public function getRecentSales(): JsonResponse
     {
         try {
-            $recentSales = Order::with(['user'])
+            $query = Order::with(['user']);
+            if ($entityId = request()->attributes->get('current_entity_id')) {
+                $query->where('entity_id', $entityId);
+            }
+
+            $recentSales = $query
                 ->orderBy('created_at', 'desc')
                 ->limit(10)
                 ->get();

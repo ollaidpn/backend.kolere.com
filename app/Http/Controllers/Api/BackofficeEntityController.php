@@ -12,8 +12,13 @@ class BackofficeEntityController extends Controller
 {
     private function getEntity(Request $request)
     {
+        $entity = $request->attributes->get('current_entity');
+        if ($entity) {
+            return $entity;
+        }
+
         $manager = $request->user();
-        $link = $manager->links()->with('entity')->first();
+        $link = $manager->currentLink()->with('entity')->first();
         return $link ? $link->entity : null;
     }
 

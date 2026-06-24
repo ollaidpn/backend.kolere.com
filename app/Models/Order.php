@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Entity;
 use App\Models\Scopes\Searchable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -12,6 +13,7 @@ class Order extends Model
     use Searchable;
 
     protected $fillable = [
+        'entity_id',
         'user_id',
         'card_id',
         'reference',
@@ -36,6 +38,11 @@ class Order extends Model
     public function user()
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function entity()
+    {
+        return $this->belongsTo(Entity::class);
     }
 
     public function card()

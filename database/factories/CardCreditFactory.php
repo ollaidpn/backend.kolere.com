@@ -23,6 +23,7 @@ class CardCreditFactory extends Factory
     public function definition(): array
     {
         return [
+            'entity_id' => \App\Models\Entity::factory(),
             'amount' => $this->faker->randomNumber(1),
             'credit' => $this->faker->randomNumber(0),
             'card_id' => \App\Models\Card::factory(),

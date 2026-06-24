@@ -14,15 +14,25 @@ use Illuminate\Support\Facades\Validator;
 
 class ClientProfileController extends Controller
 {
+    private function entityId(Request $request): ?int
+    {
+        return $request->attributes->get('current_entity_id');
+    }
+
     public function show(Request $request): JsonResponse
     {
         try {
             $user = $request->user();
+            $entityId = $this->entityId($request);
             
             // Charger les informations complètes du profil
-            $profileData = User::where('id', $user->id)
-                               ->with(['card.cardType', 'card.entity'])
-                               ->first();
+            $profileQuery = User::where('id', $user->id);
+            $profileData = $profileQuery
+                ->with(['card' => function ($query) use ($entityId) {
+                    $query->when($entityId, fn ($q) => $q->where('entity_id', $entityId))
+                          ->with(['cardType', 'entity']);
+                }])
+                ->first();
 
             if (!$profileData) {
                 return response()->json(['message' => 'Profil non trouvé'], 404);
@@ -106,7 +116,9 @@ class ClientProfileController extends Controller
             // Retourner le profil mis à jour
             return response()->json([
                 'message' => 'Profil mis à jour avec succès',
-                'data' => $user->fresh()->load(['card.cardType', 'card.entity'])
+                'data' => $user->fresh()->load(['card' => function ($query) {
+                    $query->with(['cardType', 'entity']);
+                }])
             ]);
         } catch (\Exception $e) {
             Log::error('[ClientProfileController@update] Error', ['message' => $e->getMessage()]);

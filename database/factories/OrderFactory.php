@@ -23,6 +23,7 @@ class OrderFactory extends Factory
     public function definition(): array
     {
         return [
+            'entity_id' => \App\Models\Entity::factory(),
             'name' => $this->faker->text(255),
             'description' => $this->faker->sentence(15),
             'price' => $this->faker->randomFloat(2, 0, 9999),

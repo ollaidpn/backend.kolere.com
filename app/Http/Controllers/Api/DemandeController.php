@@ -11,6 +11,11 @@ use Illuminate\Support\Facades\Storage;
 
 class DemandeController extends Controller
 {
+    private function entityId(Request $request): ?int
+    {
+        return $request->attributes->get('current_entity_id');
+    }
+
     private function formatDemande(Demande $d): array
     {
         return [
@@ -35,6 +40,9 @@ class DemandeController extends Controller
     {
         try {
             $query = Demande::with('user')->orderBy('created_at', 'desc');
+            if ($entityId = $this->entityId($request)) {
+                $query->where('entity_id', $entityId);
+            }
 
             if ($request->search) {
                 $search = $request->search;
@@ -58,9 +66,9 @@ class DemandeController extends Controller
                     'total'        => $items->total(),
                 ],
                 'counts' => [
-                    'pending'     => Demande::where('status', 'pending')->count(),
-                    'available'   => Demande::where('status', 'available')->count(),
-                    'unavailable' => Demande::where('status', 'unavailable')->count(),
+                    'pending'     => (clone $query)->where('status', 'pending')->count(),
+                    'available'   => (clone $query)->where('status', 'available')->count(),
+                    'unavailable' => (clone $query)->where('status', 'unavailable')->count(),
                 ],
             ]);
         } catch (\Exception $e) {
@@ -72,7 +80,11 @@ class DemandeController extends Controller
     public function show($id): JsonResponse
     {
         try {
-            $d = Demande::with('user')->findOrFail($id);
+            $query = Demande::with('user');
+            if ($entityId = request()->attributes->get('current_entity_id')) {
+                $query->where('entity_id', $entityId);
+            }
+            $d = $query->findOrFail($id);
             return response()->json(['data' => $this->formatDemande($d)]);
         } catch (\Exception $e) {
             return response()->json(['message' => 'Demande introuvable'], 404);
@@ -82,7 +94,11 @@ class DemandeController extends Controller
     public function respond(Request $request, $id): JsonResponse
     {
         try {
-            $d = Demande::findOrFail($id);
+            $query = Demande::query();
+            if ($entityId = $this->entityId($request)) {
+                $query->where('entity_id', $entityId);
+            }
+            $d = $query->findOrFail($id);
 
             $validated = $request->validate([
                 'status'          => 'required|in:available,unavailable',

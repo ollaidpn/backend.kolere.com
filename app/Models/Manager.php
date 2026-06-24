@@ -29,7 +29,12 @@ class Manager extends Authenticatable
 
     public function links()
     {
-        return $this->hasMany(Link::class);
+        return $this->hasOne(Link::class);
+    }
+
+    public function currentLink()
+    {
+        return $this->links();
     }
 
     public function alertApps()

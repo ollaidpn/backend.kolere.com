@@ -11,6 +11,11 @@ use Carbon\Carbon;
 
 class ClientHistoryController extends Controller
 {
+    private function entityId(Request $request): ?int
+    {
+        return $request->attributes->get('current_entity_id');
+    }
+
     private function formatOrder(Order $order): array
     {
         return [
@@ -38,6 +43,9 @@ class ClientHistoryController extends Controller
             $limit  = $request->get('limit', 10);
 
             $query = Order::where('user_id', $user->id)->orderBy('created_at', 'desc');
+            if ($entityId = $this->entityId($request)) {
+                $query->where('entity_id', $entityId);
+            }
 
             if ($search) {
                 $query->where(function ($q) use ($search) {
@@ -66,7 +74,12 @@ class ClientHistoryController extends Controller
     public function show(Request $request, $id): JsonResponse
     {
         try {
-            $order = Order::where('user_id', $request->user()->id)
+            $query = Order::where('user_id', $request->user()->id);
+            if ($entityId = $this->entityId($request)) {
+                $query->where('entity_id', $entityId);
+            }
+
+            $order = $query
                 ->where(function ($q) use ($id) {
                     $q->where('id', $id)->orWhere('reference', $id);
                 })
@@ -88,13 +101,19 @@ class ClientHistoryController extends Controller
         try {
             $user      = $request->user();
             $thisMonth = Carbon::now()->startOfMonth();
+            $entityId  = $this->entityId($request);
+
+            $ordersQuery = Order::where('user_id', $user->id);
+            if ($entityId) {
+                $ordersQuery->where('entity_id', $entityId);
+            }
 
             return response()->json(['data' => [
-                'total_orders'        => Order::where('user_id', $user->id)->count(),
-                'total_amount'        => (float) Order::where('user_id', $user->id)->sum('amount'),
-                'total_points'        => (int) Order::where('user_id', $user->id)->sum('points_earned'),
-                'this_month_orders'   => Order::where('user_id', $user->id)->where('created_at', '>=', $thisMonth)->count(),
-                'this_month_amount'   => (float) Order::where('user_id', $user->id)->where('created_at', '>=', $thisMonth)->sum('amount'),
+                'total_orders'        => (clone $ordersQuery)->count(),
+                'total_amount'        => (float) (clone $ordersQuery)->sum('amount'),
+                'total_points'        => (int) (clone $ordersQuery)->sum('points_earned'),
+                'this_month_orders'   => (clone $ordersQuery)->where('created_at', '>=', $thisMonth)->count(),
+                'this_month_amount'   => (float) (clone $ordersQuery)->where('created_at', '>=', $thisMonth)->sum('amount'),
             ]]);
         } catch (\Exception $e) {
             Log::error('[ClientHistoryController@getStats]', ['message' => $e->getMessage()]);
