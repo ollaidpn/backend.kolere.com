@@ -6,9 +6,12 @@ use App\Models\User;
 use App\Models\Entity;
 use App\Models\Admin;
 use App\Models\Manager;
+use App\Models\Card;
+use App\Models\CardType;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use App\Http\Controllers\Controller;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Mail;
@@ -200,7 +203,7 @@ class AuthController extends Controller
             $entity = null;
             if ($request->filled('entity_reference')) {
                 $entityReference = mb_strtolower(trim((string) $request->input('entity_reference')));
-                $entity = Entity::whereRaw('LOWER(reference) = ?', [$entityReference])->first();
+                $entity = Entity::with('domain')->whereRaw('LOWER(reference) = ?', [$entityReference])->first();
 
                 if (!$entity) {
                     throw ValidationException::withMessages([
@@ -208,13 +211,37 @@ class AuthController extends Controller
                     ]);
                 }
 
-                $hasEntityCard = $user->card()->where('entity_id', $entity->id)->exists();
-                $hasAnyCard = $user->card()->exists();
+                $hasEntityCard = $user->cards()
+                    ->where('entity_id', $entity->id)
+                    ->where('status', 'active')
+                    ->exists();
 
-                if ($hasAnyCard && !$hasEntityCard) {
-                    throw ValidationException::withMessages([
-                        'entity_reference' => ['Ce compte client n\'est pas lié à cette boutique.'],
-                    ]);
+                if (!$hasEntityCard) {
+                    return response()->json([
+                        'status' => 'need_access',
+                        'message' => 'Vos identifiants sont corrects mais vous n\'avez pas de carte de fidélité active pour cette boutique.',
+                        'role' => 'client',
+                        'user' => $user->makeHidden(['password']),
+                        'entity_reference' => $entity->reference,
+                        'entity' => [
+                            'id' => $entity->id,
+                            'reference' => $entity->reference,
+                            'subdomain' => $entity->subdomain,
+                            'website_status' => $entity->website_status,
+                            'name' => $entity->name,
+                            'logo' => $entity->logo,
+                            'logo_url' => $entity->logo && !str_starts_with($entity->logo, 'http') ? url(\Illuminate\Support\Facades\Storage::url($entity->logo)) : $entity->logo,
+                            'primary_color' => $entity->primary_color,
+                            'secondary_color' => $entity->secondary_color,
+                            'address' => $entity->address,
+                            'town' => $entity->town,
+                            'country' => $entity->country,
+                            'email' => $entity->email,
+                            'ccphone' => $entity->ccphone,
+                            'phone' => $entity->phone,
+                            'domain' => $entity->domain,
+                        ],
+                    ], 409);
                 }
             }
 
@@ -225,12 +252,99 @@ class AuthController extends Controller
                 'token' => $token,
                 'user' => $user->makeHidden(['password']),
                 'role' => 'client',
+                'status' => 'authenticated',
                 'entity_reference' => $entity?->reference ?? $user->card?->entity?->reference,
             ]);
         } catch (ValidationException $e) {
             throw $e;
         } catch (\Exception $e) {
             Log::error('[AuthController@loginClient] Error', ['message' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
+            return response()->json(['message' => 'Erreur serveur.'], 500);
+        }
+    }
+
+    public function claimClientCard(Request $request): JsonResponse
+    {
+        Log::info('[AuthController@claimClientCard] Attempt', ['email' => $request->email]);
+
+        try {
+            $request->validate([
+                'email' => 'required|email',
+                'password' => 'required|string',
+                'entity_reference' => 'required|string|max:255',
+            ]);
+
+            $user = User::where('email', $request->email)->first();
+
+            if (!$user || !Hash::check($request->password, $user->password)) {
+                throw ValidationException::withMessages([
+                    'email' => ['Les identifiants sont incorrects.'],
+                ]);
+            }
+
+            $entityReference = mb_strtolower(trim((string) $request->input('entity_reference')));
+            $entity = Entity::with('domain')->whereRaw('LOWER(reference) = ?', [$entityReference])->first();
+
+            if (!$entity) {
+                throw ValidationException::withMessages([
+                    'entity_reference' => ['La boutique demandée est introuvable.'],
+                ]);
+            }
+
+            $existingCard = $user->cards()
+                ->where('entity_id', $entity->id)
+                ->where('status', 'active')
+                ->first();
+
+            if (!$existingCard) {
+                $cardType = CardType::where('status', 'active')->orderBy('id')->first();
+
+                if (!$cardType) {
+                    return response()->json(['message' => 'Aucun type de carte actif disponible.'], 422);
+                }
+
+                $existingCard = DB::transaction(function () use ($user, $entity, $cardType) {
+                    return Card::create([
+                        'user_id' => $user->id,
+                        'entity_id' => $entity->id,
+                        'card_type_id' => $cardType->id,
+                        'status' => 'active',
+                        'credit' => 0,
+                    ]);
+                });
+            }
+
+            $token = $user->createToken('client-token')->plainTextToken;
+
+            return response()->json([
+                'status' => 'authenticated',
+                'token' => $token,
+                'user' => $user->makeHidden(['password']),
+                'role' => 'client',
+                'entity_reference' => $entity->reference,
+                'entity' => [
+                    'id' => $entity->id,
+                    'reference' => $entity->reference,
+                    'subdomain' => $entity->subdomain,
+                    'website_status' => $entity->website_status,
+                    'name' => $entity->name,
+                    'logo' => $entity->logo,
+                    'logo_url' => $entity->logo && !str_starts_with($entity->logo, 'http') ? url(\Illuminate\Support\Facades\Storage::url($entity->logo)) : $entity->logo,
+                    'primary_color' => $entity->primary_color,
+                    'secondary_color' => $entity->secondary_color,
+                    'address' => $entity->address,
+                    'town' => $entity->town,
+                    'country' => $entity->country,
+                    'email' => $entity->email,
+                    'ccphone' => $entity->ccphone,
+                    'phone' => $entity->phone,
+                    'domain' => $entity->domain,
+                ],
+            ]);
+        } catch (ValidationException $e) {
+            throw $e;
+        } catch (\Exception $e) {
+            Log::error('[AuthController@claimClientCard] Error', ['message' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
             return response()->json(['message' => 'Erreur serveur.'], 500);
         }
     }

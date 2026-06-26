@@ -46,6 +46,7 @@ Route::prefix('auth')->group(function () {
     Route::post('/client/register/request-otp', [AuthController::class, 'requestClientRegistrationOtp']);
     Route::post('/client/register/confirm', [AuthController::class, 'confirmClientRegistration']);
     Route::post('/client/login', [AuthController::class, 'loginClient']);
+    Route::post('/client/claim-card', [AuthController::class, 'claimClientCard']);
     Route::post('/client/forgot/request-otp', [AuthController::class, 'requestClientPasswordResetOtp']);
     Route::post('/client/forgot/reset', [AuthController::class, 'resetClientPassword']);
     Route::post('/backoffice/login', [AuthController::class, 'loginManager']);
