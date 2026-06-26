@@ -44,6 +44,7 @@ use App\Http\Controllers\Api\ShopOrderController;
 Route::prefix('auth')->group(function () {
     Route::post('/client/register', [AuthController::class, 'registerClient']);
     Route::post('/client/register/request-otp', [AuthController::class, 'requestClientRegistrationOtp']);
+    Route::post('/client/register/verify-otp', [AuthController::class, 'verifyClientRegistrationOtp']);
     Route::post('/client/register/confirm', [AuthController::class, 'confirmClientRegistration']);
     Route::post('/client/login', [AuthController::class, 'loginClient']);
     Route::post('/client/claim-card', [AuthController::class, 'claimClientCard']);

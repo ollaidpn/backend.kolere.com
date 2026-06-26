@@ -113,6 +113,57 @@ class AuthController extends Controller
         }
     }
 
+    public function verifyClientRegistrationOtp(Request $request): JsonResponse
+    {
+        Log::info('[AuthController@verifyClientRegistrationOtp] Attempt', ['email' => $request->email]);
+
+        try {
+            $validator = Validator::make($request->all(), [
+                'name' => 'required|string|max:255',
+                'email' => 'required|email',
+                'ccphone' => 'required|string|max:10',
+                'phone' => 'required|string|max:30',
+                'otp' => 'required|string|size:6',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'message' => 'Données invalides',
+                    'errors' => $validator->errors(),
+                ], 422);
+            }
+
+            $email = mb_strtolower(trim((string) $request->input('email')));
+            $cacheKey = 'client_register_otp:' . $email;
+            $pending = Cache::get($cacheKey);
+
+            if (!$pending || !is_array($pending)) {
+                return response()->json(['message' => 'Code OTP invalide ou expiré'], 400);
+            }
+
+            if (!hash_equals((string) ($pending['otp'] ?? ''), (string) $request->input('otp'))) {
+                return response()->json(['message' => 'Code OTP invalide ou expiré'], 400);
+            }
+
+            if (
+                trim((string) ($pending['name'] ?? '')) !== trim((string) $request->input('name')) ||
+                mb_strtolower(trim((string) ($pending['email'] ?? ''))) !== $email ||
+                trim((string) ($pending['ccphone'] ?? '')) !== trim((string) $request->input('ccphone')) ||
+                trim((string) ($pending['phone'] ?? '')) !== trim((string) $request->input('phone'))
+            ) {
+                return response()->json(['message' => 'Les données d\'inscription ont changé. Recommencez le processus.'], 400);
+            }
+
+            return response()->json([
+                'message' => 'Code OTP validé',
+                'status' => 'otp_verified',
+            ]);
+        } catch (\Exception $e) {
+            Log::error('[AuthController@verifyClientRegistrationOtp] Error', ['message' => $e->getMessage()]);
+            return response()->json(['message' => 'Erreur lors de la vérification du code OTP'], 500);
+        }
+    }
+
     public function confirmClientRegistration(Request $request): JsonResponse
     {
         Log::info('[AuthController@confirmClientRegistration] Attempt', ['email' => $request->email]);
