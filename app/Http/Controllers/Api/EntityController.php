@@ -156,6 +156,8 @@ class EntityController extends Controller
         try {
             $reference = $request->query('reference');
             $subdomain = $request->query('subdomain');
+            $domain = $request->query('domain');
+            $host = $request->query('host') ?? $request->getHost();
 
             $entity = null;
 
@@ -163,6 +165,16 @@ class EntityController extends Controller
                 $entity = Entity::whereRaw('LOWER(reference) = ?', [mb_strtolower(trim((string) $reference))])->with('domain')->first();
             } elseif ($subdomain) {
                 $entity = Entity::whereRaw('LOWER(subdomain) = ?', [mb_strtolower(trim((string) $subdomain))])->with('domain')->first();
+            } elseif ($domain) {
+                $entity = Entity::whereHas('domain', function ($query) use ($domain) {
+                    $query->whereRaw('LOWER(name) = ?', [mb_strtolower(trim((string) $domain))]);
+                })->with('domain')->first();
+            } elseif ($host) {
+                $normalizedHost = mb_strtolower(trim((string) $host));
+                $entity = Entity::whereRaw('LOWER(reference) = ?', [$normalizedHost])
+                    ->orWhereRaw('LOWER(subdomain) = ?', [$normalizedHost])
+                    ->with('domain')
+                    ->first();
             }
 
             if (!$entity) {

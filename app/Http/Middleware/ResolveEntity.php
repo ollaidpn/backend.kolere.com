@@ -18,6 +18,10 @@ class ResolveEntity
             ?? $request->query('entity_id');
         $requestedEntityReference = $request->header('X-Entity-Reference')
             ?? $request->query('entity_reference');
+        $requestedEntitySubdomain = $request->header('X-Entity-Subdomain')
+            ?? $request->query('subdomain');
+        $requestedEntityDomain = $request->header('X-Entity-Domain')
+            ?? $request->query('domain');
 
         if ($requestedEntityId) {
             $requestedEntityId = (int) $requestedEntityId;
@@ -31,6 +35,16 @@ class ResolveEntity
 
         if (!$entity && $requestedEntityReference) {
             $entity = Entity::whereRaw('LOWER(reference) = ?', [mb_strtolower(trim((string) $requestedEntityReference))])->first();
+        }
+
+        if (!$entity && $requestedEntitySubdomain) {
+            $entity = Entity::whereRaw('LOWER(subdomain) = ?', [mb_strtolower(trim((string) $requestedEntitySubdomain))])->first();
+        }
+
+        if (!$entity && $requestedEntityDomain) {
+            $entity = Entity::whereHas('domain', function ($query) use ($requestedEntityDomain) {
+                $query->whereRaw('LOWER(name) = ?', [mb_strtolower(trim((string) $requestedEntityDomain))]);
+            })->first();
         }
 
         if (!$entity && $requestedEntityId) {
