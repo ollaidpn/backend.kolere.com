@@ -7,7 +7,7 @@
         <!-- CSRF Token -->
         <meta name="csrf-token" content="{{ csrf_token() }}">
         
-        <title>kolerey</title>
+        <title>Para Khadija Ba</title>
         
         <!-- Fonts -->
         <link rel="dns-prefetch" href="//fonts.gstatic.com">

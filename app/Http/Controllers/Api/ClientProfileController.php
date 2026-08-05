@@ -116,12 +116,53 @@ class ClientProfileController extends Controller
 
             $user->update($updateData);
 
-            // Retourner le profil mis à jour
+            $freshUser = User::where('id', $user->id)
+                ->with(['card' => function ($query) use ($request) {
+                    $entityId = $this->entityId($request);
+                    $query->when($entityId, fn ($q) => $q->where('entity_id', $entityId))
+                          ->with(['cardType', 'entity']);
+                }])
+                ->first();
+
+            if (!$freshUser) {
+                return response()->json(['message' => 'Profil non trouvé'], 404);
+            }
+
+            $profile = [
+                'id' => $freshUser->id,
+                'name' => $freshUser->name,
+                'email' => $freshUser->email,
+                'phone' => $freshUser->phone,
+                'address' => $freshUser->address,
+                'avatar' => $freshUser->avatar,
+                'created_at' => $freshUser->created_at,
+                'updated_at' => $freshUser->updated_at,
+                'email_verified_at' => $freshUser->email_verified_at,
+            ];
+
+            if ($freshUser->card) {
+                $profile['loyalty_card'] = [
+                    'id' => $freshUser->card->id,
+                    'reference' => $freshUser->card->reference,
+                    'points' => $freshUser->card->points,
+                    'status' => $freshUser->card->status,
+                    'created_at' => $freshUser->card->created_at,
+                    'card_type' => $freshUser->card->cardType ? [
+                        'name' => $freshUser->card->cardType->name,
+                        'discount' => $freshUser->card->cardType->discount,
+                    ] : null,
+                    'entity' => $freshUser->card->entity ? [
+                        'name' => $freshUser->card->entity->name,
+                        'logo' => $freshUser->card->entity->logo,
+                        'address' => $freshUser->card->entity->address,
+                        'phone' => $freshUser->card->entity->phone,
+                    ] : null,
+                ];
+            }
+
             return response()->json([
                 'message' => 'Profil mis à jour avec succès',
-                'data' => $user->fresh()->load(['card' => function ($query) {
-                    $query->with(['cardType', 'entity']);
-                }])
+                'data' => $profile
             ]);
         } catch (\Exception $e) {
             Log::error('[ClientProfileController@update] Error', ['message' => $e->getMessage()]);

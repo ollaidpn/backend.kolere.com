@@ -21,6 +21,24 @@ use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
 {
+    private function normalizeOptionalString(mixed $value): ?string
+    {
+        $normalized = trim((string) $value);
+        return $normalized === '' ? null : $normalized;
+    }
+
+    private function buildPhoneValue(?string $ccphone, ?string $phone): ?string
+    {
+        $ccphone = $this->normalizeOptionalString($ccphone);
+        $phone = $this->normalizeOptionalString($phone);
+
+        if ($phone === null) {
+            return null;
+        }
+
+        return $ccphone ? trim($ccphone . ' ' . $phone) : $phone;
+    }
+
     public function registerClient(Request $request): JsonResponse
     {
         Log::info('[AuthController@registerClient] Attempt', ['email' => $request->email]);
@@ -45,8 +63,8 @@ class AuthController extends Controller
                 'name' => $request->name,
                 'email' => $request->email,
                 'password' => Hash::make($request->password),
-                'phone' => $request->phone,
-                'address' => $request->address,
+                'phone' => $this->normalizeOptionalString($request->phone),
+                'address' => $this->normalizeOptionalString($request->address),
             ]);
 
             $token = $user->createToken('client-token')->plainTextToken;
@@ -70,8 +88,8 @@ class AuthController extends Controller
             $validator = Validator::make($request->all(), [
                 'name' => 'required|string|max:255',
                 'email' => 'required|email|unique:users,email',
-                'ccphone' => 'required|string|max:10',
-                'phone' => 'required|string|max:30',
+                'ccphone' => 'nullable|string|max:10',
+                'phone' => 'nullable|string|max:30',
             ]);
 
             if ($validator->fails()) {
@@ -88,8 +106,8 @@ class AuthController extends Controller
             Cache::put($cacheKey, [
                 'name' => trim((string) $request->input('name')),
                 'email' => $email,
-                'ccphone' => trim((string) $request->input('ccphone')),
-                'phone' => trim((string) $request->input('phone')),
+                'ccphone' => $this->normalizeOptionalString($request->input('ccphone')),
+                'phone' => $this->normalizeOptionalString($request->input('phone')),
                 'otp' => $otp,
             ], now()->addMinutes(15));
 
@@ -121,8 +139,8 @@ class AuthController extends Controller
             $validator = Validator::make($request->all(), [
                 'name' => 'required|string|max:255',
                 'email' => 'required|email',
-                'ccphone' => 'required|string|max:10',
-                'phone' => 'required|string|max:30',
+                'ccphone' => 'nullable|string|max:10',
+                'phone' => 'nullable|string|max:30',
                 'otp' => 'required|string|size:6',
             ]);
 
@@ -145,11 +163,15 @@ class AuthController extends Controller
                 return response()->json(['message' => 'Code OTP invalide ou expiré'], 400);
             }
 
+            $requestName = trim((string) $request->input('name'));
+            $requestCcphone = $this->normalizeOptionalString($request->input('ccphone'));
+            $requestPhone = $this->normalizeOptionalString($request->input('phone'));
+
             if (
-                trim((string) ($pending['name'] ?? '')) !== trim((string) $request->input('name')) ||
+                trim((string) ($pending['name'] ?? '')) !== $requestName ||
                 mb_strtolower(trim((string) ($pending['email'] ?? ''))) !== $email ||
-                trim((string) ($pending['ccphone'] ?? '')) !== trim((string) $request->input('ccphone')) ||
-                trim((string) ($pending['phone'] ?? '')) !== trim((string) $request->input('phone'))
+                $this->normalizeOptionalString($pending['ccphone'] ?? null) !== $requestCcphone ||
+                $this->normalizeOptionalString($pending['phone'] ?? null) !== $requestPhone
             ) {
                 return response()->json(['message' => 'Les données d\'inscription ont changé. Recommencez le processus.'], 400);
             }
@@ -172,8 +194,8 @@ class AuthController extends Controller
             $validator = Validator::make($request->all(), [
                 'name' => 'required|string|max:255',
                 'email' => 'required|email',
-                'ccphone' => 'required|string|max:10',
-                'phone' => 'required|string|max:30',
+                'ccphone' => 'nullable|string|max:10',
+                'phone' => 'nullable|string|max:30',
                 'otp' => 'required|string|size:6',
                 'password' => 'required|string|min:8|confirmed',
             ]);
@@ -197,11 +219,15 @@ class AuthController extends Controller
                 return response()->json(['message' => 'Code OTP invalide ou expiré'], 400);
             }
 
+            $requestName = trim((string) $request->input('name'));
+            $requestCcphone = $this->normalizeOptionalString($request->input('ccphone'));
+            $requestPhone = $this->normalizeOptionalString($request->input('phone'));
+
             if (
-                trim((string) ($pending['name'] ?? '')) !== trim((string) $request->input('name')) ||
+                trim((string) ($pending['name'] ?? '')) !== $requestName ||
                 mb_strtolower(trim((string) ($pending['email'] ?? ''))) !== $email ||
-                trim((string) ($pending['ccphone'] ?? '')) !== trim((string) $request->input('ccphone')) ||
-                trim((string) ($pending['phone'] ?? '')) !== trim((string) $request->input('phone'))
+                $this->normalizeOptionalString($pending['ccphone'] ?? null) !== $requestCcphone ||
+                $this->normalizeOptionalString($pending['phone'] ?? null) !== $requestPhone
             ) {
                 return response()->json(['message' => 'Les données d\'inscription ont changé. Recommencez le processus.'], 400);
             }
@@ -211,10 +237,10 @@ class AuthController extends Controller
             }
 
             $user = User::create([
-                'name' => trim((string) $request->input('name')),
+                'name' => $requestName,
                 'email' => $email,
                 'password' => Hash::make($request->input('password')),
-                'phone' => trim((string) $request->input('ccphone')) . ' ' . trim((string) $request->input('phone')),
+                'phone' => $this->buildPhoneValue($requestCcphone, $requestPhone),
             ]);
 
             Cache::forget($cacheKey);

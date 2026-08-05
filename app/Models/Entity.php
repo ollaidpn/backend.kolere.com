@@ -121,6 +121,11 @@ class Entity extends Model
         return $this->hasMany(ShopPayment::class);
     }
 
+    public function appInfo()
+    {
+        return $this->hasOne(AppInfo::class);
+    }
+
     protected static function booted(): void
     {
         static::creating(function (self $entity) {

@@ -33,6 +33,7 @@ use App\Http\Controllers\Api\ShopBrandController;
 use App\Http\Controllers\Api\ShopPromoCodeController;
 use App\Http\Controllers\Api\ShopPaymentController;
 use App\Http\Controllers\Api\ShopOrderController;
+use App\Http\Controllers\Api\PaymentRestrictionController;
 
 /*
 |--------------------------------------------------------------------------
@@ -167,6 +168,7 @@ Route::prefix('backoffice')->middleware(['auth:sanctum', 'role:manager', 'resolv
     // Dashboard backoffice
     Route::get('/dashboard/stats', [BackofficeDashboardController::class, 'getStats']);
     Route::get('/dashboard/quick-stats', [BackofficeDashboardController::class, 'getQuickStats']);
+    Route::get('/payment-restriction', [PaymentRestrictionController::class, 'show']);
 
     // Paramètres entité (pharmacie)
     Route::get('/entity', [BackofficeEntityController::class, 'show']);
@@ -236,7 +238,7 @@ Route::prefix('client')->middleware(['auth:sanctum', 'role:client', 'resolve.ent
     
     // Profil
     Route::get('/profile', [ClientProfileController::class, 'show']);
-    Route::put('/profile', [ClientProfileController::class, 'update']);
+    Route::post('/profile', [ClientProfileController::class, 'update']);
     Route::post('/profile/avatar', [ClientProfileController::class, 'updateAvatar']);
     Route::put('/profile/password', [ClientProfileController::class, 'updatePassword']);
     Route::put('/profile/email', [ClientProfileController::class, 'updateEmail']);
