@@ -238,7 +238,7 @@ Route::prefix('client')->middleware(['auth:sanctum', 'role:client', 'resolve.ent
     
     // Profil
     Route::get('/profile', [ClientProfileController::class, 'show']);
-    Route::post('/profile', [ClientProfileController::class, 'update']);
+    Route::match(['post', 'put'], '/profile', [ClientProfileController::class, 'update']);
     Route::post('/profile/avatar', [ClientProfileController::class, 'updateAvatar']);
     Route::put('/profile/password', [ClientProfileController::class, 'updatePassword']);
     Route::put('/profile/email', [ClientProfileController::class, 'updateEmail']);
