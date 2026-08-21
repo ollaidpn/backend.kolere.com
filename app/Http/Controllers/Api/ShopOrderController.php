@@ -319,7 +319,21 @@ class ShopOrderController extends Controller
 
 
             if ($paymentMethod === 'online') {
-                $paymentLog = $this->createAttemptLog($entityId, $order, $validated['client_infos'], $amount, $paymentMethod, $gatewayMethod);
+                // 1. Création initiale du Log de paiement avec le statut 'init'
+                $paymentLog = ShopPaymentLog::create([
+                    'entity_id' => $entityId,
+                    'user_id' => auth()->id() ?? null,
+                    'type' => 'order',
+                    'user_info' => $validated['client_infos'],
+                    'data' => $orderItems,
+                    'shop_order_id' => $order->id,
+                    'reference' => $this->generatePaymentLogReference(),
+                    'client_infos' => $validated['client_infos'],
+                    'amount' => $amount,
+                    'payment_method' => $paymentMethod,
+                    'paid_by' => $gatewayMethod,
+                    'status' => 'init',
+                ]);
 
                 try {
                     $entity = Entity::find($entityId);
@@ -328,16 +342,13 @@ class ShopOrderController extends Controller
                     $webKey = $entity?->fayko_webhook_key ?: env('FAYKO_WEBHOOK_KEY');
                     $faykoMode = $entity?->fayko_mode ?: env('FAYKO_MODE', 'live');
 
-                    // Si mode dev, envoyer 10 FCFA à Fayko pour les tests (minimum requis par Fayko)
                     $faykoAmount = ($faykoMode === 'dev') ? 10 : $amount;
 
-                    // Construction de l'URL publique du frontend (sans localhost)
                     $frontendUrl = config('app.frontend_url', env('FRONTEND_URL', 'https://senepharma.com'));
                     if (str_contains($frontendUrl, 'localhost')) {
                         $frontendUrl = 'https://senepharma.com';
                     }
                     $statusUrl = rtrim($frontendUrl, '/') . '/order-status/' . $order->reference;
-
 
                     $paymentGateway = (new FaykoPaymentService($pubKey, $secKey, $webKey))->createCheckout([
                         'client_name' => $validated['client_infos']['name'],
@@ -376,27 +387,34 @@ class ShopOrderController extends Controller
                     return response()->json(['message' => 'Paiement en ligne indisponible : ' . $e->getMessage()], 502);
                 }
 
+                $transactionId = $paymentGateway['gateway_reference'];
 
                 $order->update([
                     'payment_link' => $paymentGateway['payment_link'],
                     'payment_qrcode_base64' => $paymentGateway['payment_qrcode_base64'],
                     'payment_expires_at' => $paymentGateway['when_expires'],
+                    'payment_reference' => $transactionId ?: $order->payment_reference,
                 ]);
 
+                // 2. Fayko a répondu : Mise à jour du PaymentLog avec la transaction_id et statut = 'pending'
                 $paymentLog->update([
-                    'status' => 'processing',
-                    'gateway_reference' => $paymentGateway['gateway_reference'],
+                    'status' => 'pending',
+                    'transaction_id' => $transactionId,
+                    'gateway_reference' => $transactionId,
                     'gateway_payload' => $paymentGateway['raw'],
                 ]);
 
                 return response()->json([
                     'message' => 'Commande créée, paiement en attente',
                     'data' => $order->fresh(),
+                    'payment_log' => $paymentLog->fresh(),
+                    'transaction_id' => $transactionId,
                     'payment_link' => $paymentGateway['payment_link'],
                     'payment_qrcode_base64' => $paymentGateway['payment_qrcode_base64'],
                     'when_expires' => $paymentGateway['when_expires'],
                 ], 201);
             }
+
 
             return response()->json([
                 'message' => 'Commande passée avec succès',
@@ -605,11 +623,13 @@ class ShopOrderController extends Controller
                 if ($isPaid) {
                     if ($paymentLog) {
                         $paymentLog->update([
-                            'status' => 'paid',
+                            'status' => 'success',
+                            'transaction_id' => $gatewayReference ?: $paymentLog->transaction_id,
                             'gateway_reference' => $gatewayReference,
                             'gateway_payload' => $payload,
                         ]);
                     }
+
 
                     $payment = ShopPayment::firstOrCreate(
                         ['shop_order_id' => $order->id],
@@ -650,9 +670,11 @@ class ShopOrderController extends Controller
                 }
 
                 if ($isFailedOrExpired) {
+                    $newStatus = $event === 'checkout.expired' || $status === 'expired' ? 'expired' : 'failed';
+
                     if ($paymentLog) {
                         $paymentLog->update([
-                            'status' => 'failed',
+                            'status' => $newStatus,
                             'gateway_reference' => $gatewayReference,
                             'gateway_payload' => $payload,
                             'error_message' => data_get($payload, 'error_message') ?? data_get($payload, 'message'),
@@ -666,6 +688,7 @@ class ShopOrderController extends Controller
                         ]);
                     }
                 }
+
 
                 $res = response()->json([
                     'success' => true,
@@ -686,5 +709,49 @@ class ShopOrderController extends Controller
         }
     }
 
+    /**
+     * Endpoint public de Polling par transaction_id pour le Frontend
+     */
+    public function checkPaymentLog(Request $request): JsonResponse
+    {
+        try {
+            $transactionId = $request->query('transaction_id') ?: $request->query('reference');
+            if (!$transactionId) {
+                return response()->json(['message' => 'transaction_id requis'], 422);
+            }
 
+            $log = ShopPaymentLog::where('transaction_id', $transactionId)
+                ->orWhere('gateway_reference', $transactionId)
+                ->orWhere('reference', $transactionId)
+                ->latest()
+                ->first();
+
+            if (!$log && $order = $this->resolveOrderByReference($transactionId)) {
+                $log = ShopPaymentLog::where('shop_order_id', $order->id)->latest()->first();
+            }
+
+            if (!$log) {
+                return response()->json(['message' => 'Tentative de paiement introuvable'], 404);
+            }
+
+            $order = $log->shop_order_id ? ShopOrder::find($log->shop_order_id) : null;
+
+            return response()->json([
+                'data' => [
+                    'status' => $log->status, // init, pending, success, failed, expired, cancelled
+                    'transaction_id' => $log->transaction_id ?: $log->gateway_reference,
+                    'reference' => $log->reference,
+                    'amount' => $log->amount,
+                    'user_info' => $log->user_info ?: $log->client_infos,
+                    'order_reference' => $order?->reference,
+                    'status_payment' => $order?->status_payment,
+                    'status_order' => $order?->status_order,
+                ],
+            ]);
+        } catch (\Exception $e) {
+            Log::error('[ShopOrderController@checkPaymentLog] Error', ['message' => $e->getMessage()]);
+            return response()->json(['message' => 'Erreur de vérification'], 500);
+        }
+    }
 }
+

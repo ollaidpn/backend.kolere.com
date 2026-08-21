@@ -82,7 +82,9 @@ Route::prefix('shop')->middleware(['resolve.entity'])->group(function () {
     Route::get('/brands', [ShopBrandController::class, 'index']);
     Route::post('/orders', [ShopOrderController::class, 'storePublic']);
     Route::post('/orders/check', [ShopOrderController::class, 'checkPublic']);
+    Route::get('/payment-log/check', [ShopOrderController::class, 'checkPaymentLog']);
     Route::post('/orders/cancel', [ShopOrderController::class, 'cancelPublic']);
+
     Route::post('/promo-codes/check', [ShopPromoCodeController::class, 'checkPublic']);
 });
 

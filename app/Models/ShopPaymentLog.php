@@ -15,8 +15,13 @@ class ShopPaymentLog extends Model
 
     protected $fillable = [
         'entity_id',
+        'user_id',
+        'type',
+        'user_info',
+        'data',
         'shop_order_id',
         'reference',
+        'transaction_id',
         'client_infos',
         'amount',
         'payment_method',
@@ -29,9 +34,12 @@ class ShopPaymentLog extends Model
 
     protected $casts = [
         'amount' => 'decimal:2',
+        'user_info' => 'array',
+        'data' => 'array',
         'client_infos' => 'array',
         'gateway_payload' => 'array',
     ];
+
 
     protected $searchableFields = ['*'];
 
