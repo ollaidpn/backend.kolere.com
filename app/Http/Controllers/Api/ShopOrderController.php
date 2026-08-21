@@ -679,10 +679,62 @@ class ShopOrderController extends Controller
                         'payment_reference' => $gatewayReference ?: $order->payment_reference,
                     ]);
 
+                    // 1. Envoi des e-mails de confirmation (Client + Boutique/Admin)
+                    try {
+                        $entity = Entity::find($order->entity_id);
+
+                        // E-mail Client
+                        $clientEmail = data_get($order->client_infos, 'email');
+                        if ($clientEmail && filter_var($clientEmail, FILTER_VALIDATE_EMAIL)) {
+                            \Illuminate\Support\Facades\Mail::to($clientEmail)
+                                ->send(new \App\Mail\OrderConfirmationMail($order, $entity, 'client'));
+                        }
+
+                        // E-mail Admin / Boutique
+                        $adminEmail = $entity?->email ?: config('mail.from.address');
+                        if ($adminEmail && filter_var($adminEmail, FILTER_VALIDATE_EMAIL)) {
+                            \Illuminate\Support\Facades\Mail::to($adminEmail)
+                                ->send(new \App\Mail\OrderConfirmationMail($order, $entity, 'admin'));
+                        }
+                    } catch (\Throwable $mailErr) {
+                        Log::error('[ShopOrderController@webhookFayko] Erreur d\'envoi d\'email de confirmation', ['error' => $mailErr->getMessage()]);
+                    }
+
+                    // 2. Envoi du SMS de confirmation au client (Uniquement si paiement EN LIGNE + Numéro Sénégal + Solde SMS suffisant)
+                    if ($order->payment_method === 'online') {
+                        try {
+                            $ccphone = (string) data_get($order->client_infos, 'ccphone', '+221');
+                            $phone = (string) data_get($order->client_infos, 'phone', '');
+
+                            if (($ccphone === '+221' || str_starts_with($phone, '+221') || str_starts_with($phone, '221')) && !empty($phone)) {
+                                $fullPhone = $ccphone . preg_replace('/[^0-9]/', '', $phone);
+                                $entityName = $order->entity?->name ?: 'Kolere Shop';
+                                $totalFormatted = number_format($order->total, 0, ',', ' ');
+
+                                $smsMessage = "Confirmation : Votre commande {$order->reference} de {$totalFormatted} FCFA a bien ete payee en ligne sur {$entityName}. Merci pour votre confiance !";
+                                if (mb_strlen($smsMessage) > 160) {
+                                    $smsMessage = mb_substr($smsMessage, 0, 160);
+                                }
+
+                                $notifService = new \App\Services\NotificationsService();
+                                $smsResult = $notifService->sendSmsNow([$fullPhone], $smsMessage);
+
+                                Log::info('[ShopOrderController@webhookFayko] Envoi SMS confirmation paiement en ligne', [
+                                    'order_ref' => $order->reference,
+                                    'phone' => $fullPhone,
+                                    'result' => $smsResult,
+                                ]);
+                            }
+                        } catch (\Throwable $smsErr) {
+                            Log::error('[ShopOrderController@webhookFayko] Erreur envoi SMS', ['error' => $smsErr->getMessage()]);
+                        }
+                    }
+
                     $res = response()->json([
                         'success' => true,
                         'message' => 'Webhook checkout recu.',
                     ]);
+
 
                     Log::info('[ShopOrderController@webhookFayko] Succès: Commande payée et confirmée', [
                         'order_id' => $order->id,
