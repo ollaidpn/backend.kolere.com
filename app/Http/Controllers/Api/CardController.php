@@ -19,6 +19,35 @@ class CardController extends Controller
         return $request->attributes->get('current_entity_id');
     }
 
+    private function normalizedPhoneExpression(): string
+    {
+        return "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(phone, ''), ' ', ''), '-', ''), '+', ''), '(', ''), ')', ''), '.', '')";
+    }
+
+    private function normalizePhoneDigits(?string $value): string
+    {
+        return preg_replace('/\D+/', '', $value ?? '') ?? '';
+    }
+
+    private function buildCardScanPayload(Card $card): array
+    {
+        return [
+            'id'        => $card->id,
+            'reference' => $card->reference,
+            'points'    => $card->points,
+            'status'    => $card->status,
+            'card_type' => $card->cardType
+                ? ['name' => $card->cardType->name, 'discount' => $card->cardType->discount]
+                : null,
+            'client'    => [
+                'id'    => $card->user->id,
+                'name'  => $card->user->name,
+                'email' => $card->user->email,
+                'phone' => $card->user->phone,
+            ],
+        ];
+    }
+
     public function scanByReference(Request $request, string $reference): JsonResponse
     {
         try {
@@ -28,26 +57,71 @@ class CardController extends Controller
             }
             $card = $query->firstOrFail();
 
+            if ($card->status === 'suspended') {
+                return response()->json(['message' => 'Cette carte est suspendue et ne peut pas être utilisée pour effectuer une vente.'], 403);
+            }
+
             return response()->json([
-                'data' => [
-                    'id'         => $card->id,
-                    'reference'  => $card->reference,
-                    'points'     => $card->points,
-                    'status'     => $card->status,
-                    'card_type'  => $card->cardType
-                        ? ['name' => $card->cardType->name, 'discount' => $card->cardType->discount]
-                        : null,
-                    'client'     => [
-                        'id'    => $card->user->id,
-                        'name'  => $card->user->name,
-                        'email' => $card->user->email,
-                        'phone' => $card->user->phone,
-                    ],
-                ],
+                'data' => $this->buildCardScanPayload($card),
             ]);
         } catch (\Exception $e) {
             Log::error('[CardController@scanByReference] Error', ['ref' => $reference, 'message' => $e->getMessage()]);
             return response()->json(['message' => 'Carte introuvable'], 404);
+        }
+    }
+
+    public function scanByPhone(Request $request): JsonResponse
+    {
+        try {
+            $validated = $request->validate([
+                'ccphone' => 'required|string|max:10',
+                'phone' => 'required|string|max:30',
+            ]);
+
+            $entityId = $this->entityId($request);
+            if (!$entityId) {
+                return response()->json(['message' => 'Entité courante introuvable'], 422);
+            }
+
+            $ccphone = trim($validated['ccphone']);
+            $phone = trim($validated['phone']);
+
+            $normalizedFull = $this->normalizePhoneDigits($ccphone . $phone);
+            $normalizedPhone = $this->normalizePhoneDigits($phone);
+            $phoneExpression = $this->normalizedPhoneExpression();
+
+            $users = User::query()
+                ->where(function ($query) use ($phoneExpression, $normalizedFull, $normalizedPhone) {
+                    $query->orWhereRaw("{$phoneExpression} = ?", [$normalizedFull]);
+                    if ($normalizedPhone !== $normalizedFull) {
+                        $query->orWhereRaw("{$phoneExpression} = ?", [$normalizedPhone]);
+                    }
+                })
+                ->get();
+
+            foreach ($users as $user) {
+                $cardQuery = Card::with(['user', 'cardType'])
+                    ->where('entity_id', $entityId)
+                    ->where('user_id', $user->id);
+
+                $card = $cardQuery->first();
+                if ($card) {
+                    if ($card->status === 'suspended') {
+                        return response()->json(['message' => 'La carte rattachée à ce client est suspendue.'], 403);
+                    }
+                    return response()->json(['data' => $this->buildCardScanPayload($card)]);
+                }
+            }
+
+
+            if ($users->isEmpty()) {
+                return response()->json(['message' => 'Aucun client avec ce numéro trouvé'], 404);
+            }
+
+            return response()->json(['message' => 'Aucune carte trouvée pour ce client dans cette boutique'], 404);
+        } catch (\Exception $e) {
+            Log::error('[CardController@scanByPhone] Error', ['message' => $e->getMessage()]);
+            return response()->json(['message' => 'Client introuvable'], 404);
         }
     }
 
@@ -325,4 +399,49 @@ class CardController extends Controller
             return response()->json(['message' => 'Erreur lors du chargement de l\'historique'], 500);
         }
     }
+
+    /**
+     * Suspendre ou Réactiver une carte (avec vérification du mot de passe du manager si fourni)
+     */
+    public function toggleStatus(Request $request, $id): JsonResponse
+    {
+        try {
+            $request->validate([
+                'password' => 'required|string',
+                'status'   => 'nullable|string|in:active,suspended,disabled',
+            ]);
+
+            // Vérification du mot de passe de l'utilisateur connecté
+            $currentUser = $request->user();
+            if ($currentUser && !Hash::check($request->password, $currentUser->password)) {
+                return response()->json(['message' => 'Mot de passe incorrect. Action annulée.'], 403);
+            }
+
+            $query = Card::query();
+            if ($entityId = $this->entityId($request)) {
+                $query->where('entity_id', $entityId);
+            }
+            $card = $query->findOrFail($id);
+
+            $newStatus = $request->status ?: ($card->status === 'suspended' ? 'active' : 'suspended');
+            $card->update(['status' => $newStatus]);
+
+            Log::info('[CardController@toggleStatus] Statut de carte modifié', [
+                'card_id'    => $card->id,
+                'new_status' => $newStatus,
+                'changed_by' => $currentUser?->id,
+            ]);
+
+            return response()->json([
+                'message' => $newStatus === 'suspended' ? 'Carte suspendue avec succès' : 'Carte réactivée avec succès',
+                'data'    => $card->fresh(['user', 'cardType']),
+            ]);
+        } catch (ValidationException $e) {
+            throw $e;
+        } catch (\Exception $e) {
+            Log::error('[CardController@toggleStatus] Error', ['id' => $id, 'message' => $e->getMessage()]);
+            return response()->json(['message' => 'Erreur lors du changement d\'état de la carte'], 500);
+        }
+    }
 }
+

@@ -34,7 +34,7 @@ class DatabaseSeeder extends Seeder
         $tables = [
             'alert_messages', 'alert_apps', 'card_credits', 'discounts',
             'orders', 'cards', 'card_types', 'links', 'managers', 'users',
-            'entities', 'domains', 'invitations', 'terms',
+            'entities', 'domains', 'invitations', 'notification_reads', 'notifications', 'terms',
         ];
 
         foreach ($tables as $table) {
@@ -80,6 +80,15 @@ class DatabaseSeeder extends Seeder
                 'website_status'  => 'active',
                 'primary_color'   => '#0D9488',
                 'secondary_color' => '#F0FDFA',
+                'web_slider'      => [
+                    [
+                        'title' => 'Votre santé, notre priorité',
+                        'subtitle' => 'Commandez vos essentiels en quelques clics.',
+                        'btn' => 'Découvrir',
+                        'link' => '/',
+                        'image' => 'https://images.unsplash.com/photo-1587854692152-cbe660dbde88?auto=format&fit=crop&w=1200&q=80',
+                    ],
+                ],
                 'address'         => '12 Rue Carnot',
                 'town'            => 'Dakar',
                 'country'         => 'Sénégal',

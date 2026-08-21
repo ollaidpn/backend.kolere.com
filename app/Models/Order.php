@@ -27,6 +27,7 @@ class Order extends Model
         'total',
         'discount_id',
         'prescription_photo',
+        'manager_id',
     ];
 
     protected $casts = [
@@ -39,6 +40,12 @@ class Order extends Model
     {
         return $this->belongsTo(User::class);
     }
+
+    public function manager()
+    {
+        return $this->belongsTo(Manager::class);
+    }
+
 
     public function entity()
     {

@@ -186,15 +186,16 @@ class ClientProfileController extends Controller
                 ], 422);
             }
 
+            $fileService = new \App\Services\FileUploadService();
             // Supprimer l'ancien avatar
-            if ($user->avatar) {
-                Storage::disk('public')->delete('avatars/' . basename($user->avatar));
+            if ($user->avatar && !str_starts_with($user->avatar, 'http')) {
+                $fileService->delete($user->avatar);
             }
 
-            $path = $request->file('avatar')->store('avatars', 'public');
-            $url = config('app.url') . '/storage/' . $path;
+            $uploaded = $fileService->upload($request->file('avatar'), 'avatars');
+            $url = $uploaded['url'];
 
-            $user->update(['avatar' => $url]);
+            $user->update(['avatar' => $uploaded['path']]);
 
             return response()->json([
                 'message' => 'Photo mise à jour avec succès',

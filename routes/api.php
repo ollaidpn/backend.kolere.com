@@ -34,6 +34,9 @@ use App\Http\Controllers\Api\ShopPromoCodeController;
 use App\Http\Controllers\Api\ShopPaymentController;
 use App\Http\Controllers\Api\ShopOrderController;
 use App\Http\Controllers\Api\PaymentRestrictionController;
+use App\Http\Controllers\Api\UploadController;
+use App\Http\Controllers\Api\BackofficeNotificationController;
+use App\Http\Controllers\Api\ClientNotificationController;
 
 /*
 |--------------------------------------------------------------------------
@@ -71,6 +74,21 @@ Route::prefix('admin-invitations')->group(function () {
 
 // ─── Résolution publique de boutique ────────────────────────────────────────
 Route::get('/entities/resolve', [EntityController::class, 'resolve']);
+
+// ─── Boutique Publique (sans auth) ──────────────────────────────────────────
+Route::prefix('shop')->middleware(['resolve.entity'])->group(function () {
+    Route::get('/items', [ShopItemController::class, 'index']);
+    Route::get('/categories', [ShopCategoryController::class, 'index']);
+    Route::get('/brands', [ShopBrandController::class, 'index']);
+    Route::post('/orders', [ShopOrderController::class, 'storePublic']);
+    Route::post('/orders/check', [ShopOrderController::class, 'checkPublic']);
+    Route::post('/orders/cancel', [ShopOrderController::class, 'cancelPublic']);
+    Route::post('/promo-codes/check', [ShopPromoCodeController::class, 'checkPublic']);
+});
+
+
+
+Route::post('/webhook/fayko', [ShopOrderController::class, 'webhookFayko']);
 
 // ─── Espace Admin (table admins) ─────────────────────────────────────────────
 Route::prefix('admin')->middleware(['auth:sanctum', 'role:admin'])->group(function () {
@@ -128,6 +146,9 @@ Route::prefix('backoffice')->middleware(['auth:sanctum', 'role:manager', 'resolv
         return response()->json(['data' => $request->user()]);
     });
 
+    // Invitations managers
+    Route::post('/invitations', [InvitationController::class, 'store']);
+
     // Clients
     Route::get('/clients/stats', [ClientController::class, 'getStats']);
     Route::get('/clients', [ClientController::class, 'index']);
@@ -145,6 +166,7 @@ Route::prefix('backoffice')->middleware(['auth:sanctum', 'role:manager', 'resolv
 
     // Cartes de fidélité
     Route::get('/cards/scan/{reference}', [CardController::class, 'scanByReference']);
+    Route::get('/cards/scan-by-phone', [CardController::class, 'scanByPhone']);
     Route::get('/cards/stats', [CardController::class, 'getStats']);
     Route::get('/cards', [CardController::class, 'index']);
     Route::post('/cards', [CardController::class, 'store']);
@@ -152,6 +174,8 @@ Route::prefix('backoffice')->middleware(['auth:sanctum', 'role:manager', 'resolv
     Route::get('/cards/{id}/history', [CardController::class, 'getHistory']);
     Route::put('/cards/{id}/add-points', [CardController::class, 'addPoints']);
     Route::put('/cards/{id}/redeem-points', [CardController::class, 'redeemPoints']);
+    Route::post('/cards/{id}/toggle-status', [CardController::class, 'toggleStatus']);
+
 
     // Conversions (échange de points)
     Route::get('/conversions/stats', [ConversionController::class, 'stats']);
@@ -165,14 +189,33 @@ Route::prefix('backoffice')->middleware(['auth:sanctum', 'role:manager', 'resolv
     Route::delete('/rewards/{id}', [RewardController::class, 'destroy']);
     Route::patch('/rewards/{id}/toggle-status', [RewardController::class, 'toggleStatus']);
 
+    // Campagnes de notifications
+    Route::get('/campaigns/sms-balance', [\App\Http\Controllers\Api\CampaignController::class, 'getSmsBalance']);
+    Route::get('/campaigns/sms-packages', [\App\Http\Controllers\Api\CampaignController::class, 'getSmsPackages']);
+    Route::post('/campaigns/sms-packages/buy', [\App\Http\Controllers\Api\CampaignController::class, 'buySmsPackage']);
+    Route::get('/campaigns/sms-purchases', [\App\Http\Controllers\Api\CampaignController::class, 'getSmsPurchases']);
+    Route::get('/campaigns', [\App\Http\Controllers\Api\CampaignController::class, 'index']);
+    Route::post('/campaigns', [\App\Http\Controllers\Api\CampaignController::class, 'store']);
+    Route::post('/campaigns/{id}/retry', [\App\Http\Controllers\Api\CampaignController::class, 'retry']);
+
+
+
+    Route::get('/notifications', [BackofficeNotificationController::class, 'index']);
+    Route::post('/notifications/{id}/read', [BackofficeNotificationController::class, 'markRead']);
+
     // Dashboard backoffice
     Route::get('/dashboard/stats', [BackofficeDashboardController::class, 'getStats']);
+    Route::get('/dashboard/manager-stats', [BackofficeDashboardController::class, 'getManagerStats']);
     Route::get('/dashboard/quick-stats', [BackofficeDashboardController::class, 'getQuickStats']);
+
     Route::get('/payment-restriction', [PaymentRestrictionController::class, 'show']);
 
     // Paramètres entité (pharmacie)
     Route::get('/entity', [BackofficeEntityController::class, 'show']);
     Route::post('/entity', [BackofficeEntityController::class, 'update']);
+    Route::post('/entity/domain-request', [BackofficeEntityController::class, 'requestDomainActivation']);
+    Route::post('/uploads', [UploadController::class, 'store']);
+
 
     // Boutique - articles
     Route::get('/shop/items', [ShopItemController::class, 'index']);
@@ -202,10 +245,28 @@ Route::prefix('backoffice')->middleware(['auth:sanctum', 'role:manager', 'resolv
 
     Route::get('/shop/payments', [ShopPaymentController::class, 'index']);
 
+    // Route publique des moyens de paiement Fayko disponibles
+    Route::get('/shop/payment-providers', [\App\Http\Controllers\Api\ShopPayoutController::class, 'checkoutProviders']);
+
+    // Module Retraits (Fayko Payouts & Solde)
+
+    Route::get('/shop/payouts/balance', [\App\Http\Controllers\Api\ShopPayoutController::class, 'balance']);
+    Route::post('/shop/payouts/init', [\App\Http\Controllers\Api\ShopPayoutController::class, 'initPayout']);
+    Route::post('/shop/payouts/request', [\App\Http\Controllers\Api\ShopPayoutController::class, 'requestPayout']);
+    Route::get('/shop/payouts', [\App\Http\Controllers\Api\ShopPayoutController::class, 'listPayouts']);
+
+
     // Demandes clients
     Route::get('/demandes', [DemandeController::class, 'index']);
     Route::get('/demandes/{id}', [DemandeController::class, 'show']);
     Route::post('/demandes/{id}/respond', [DemandeController::class, 'respond']);
+
+    // Domaines personnalisés
+    Route::prefix('settings/shop/domain')->group(function () {
+        Route::post('/custom/search', [\App\Http\Controllers\Api\ShopDomainController::class, 'customSearch']);
+        Route::post('/custom/check', [\App\Http\Controllers\Api\ShopDomainController::class, 'customCheck']);
+        Route::post('/custom/register', [\App\Http\Controllers\Api\ShopDomainController::class, 'customRegister']);
+    });
 });
 
 // ─── Espace Manager (table managers) ─────────────────────────────────────────
@@ -246,9 +307,18 @@ Route::prefix('client')->middleware(['auth:sanctum', 'role:client', 'resolve.ent
     Route::delete('/profile', [ClientProfileController::class, 'deleteAccount']);
     Route::get('/profile/preferences', [ClientProfileController::class, 'getPreferences']);
     Route::put('/profile/preferences', [ClientProfileController::class, 'updatePreferences']);
+    Route::get('/notifications', [ClientNotificationController::class, 'index']);
+    Route::post('/notifications/{id}/read', [ClientNotificationController::class, 'markRead']);
 
     // Demandes (ordonnances)
     Route::get('/demandes', [ClientDemandeController::class, 'index']);
     Route::post('/demandes', [ClientDemandeController::class, 'store']);
     Route::get('/demandes/{id}', [ClientDemandeController::class, 'show']);
+});
+
+// ─── FCM Push Tokens ────────────────────────────────────────────────────────
+Route::middleware(['auth:sanctum'])->group(function () {
+    Route::post('/fcm/save-token', [\App\Http\Controllers\Api\FirebaseTokenController::class, 'store']);
+    Route::post('/fcm/check-token', [\App\Http\Controllers\Api\FirebaseTokenController::class, 'check']);
+    Route::post('/fcm/deactivate-token', [\App\Http\Controllers\Api\FirebaseTokenController::class, 'destroy']);
 });

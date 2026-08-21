@@ -8,6 +8,7 @@ use App\Models\Admin;
 use App\Models\Manager;
 use App\Models\Card;
 use App\Models\CardType;
+use App\Services\FileUploadService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use App\Http\Controllers\Controller;
@@ -307,9 +308,10 @@ class AuthController extends Controller
                             'website_status' => $entity->website_status,
                             'name' => $entity->name,
                             'logo' => $entity->logo,
-                            'logo_url' => $entity->logo && !str_starts_with($entity->logo, 'http') ? url(\Illuminate\Support\Facades\Storage::url($entity->logo)) : $entity->logo,
+                            'logo_url' => $entity->logo ? (str_starts_with($entity->logo, 'http') ? $entity->logo : (new FileUploadService())->getUrl($entity->logo)) : null,
                             'primary_color' => $entity->primary_color,
                             'secondary_color' => $entity->secondary_color,
+                            'web_slider' => $entity->web_slider,
                             'address' => $entity->address,
                             'town' => $entity->town,
                             'country' => $entity->country,
@@ -406,9 +408,10 @@ class AuthController extends Controller
                     'website_status' => $entity->website_status,
                     'name' => $entity->name,
                     'logo' => $entity->logo,
-                    'logo_url' => $entity->logo && !str_starts_with($entity->logo, 'http') ? url(\Illuminate\Support\Facades\Storage::url($entity->logo)) : $entity->logo,
+                    'logo_url' => $entity->logo ? (str_starts_with($entity->logo, 'http') ? $entity->logo : (new FileUploadService())->getUrl($entity->logo)) : null,
                     'primary_color' => $entity->primary_color,
                     'secondary_color' => $entity->secondary_color,
+                    'web_slider' => $entity->web_slider,
                     'address' => $entity->address,
                     'town' => $entity->town,
                     'country' => $entity->country,

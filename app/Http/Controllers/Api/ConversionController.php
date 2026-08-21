@@ -141,6 +141,7 @@ class ConversionController extends Controller
                         'entity_id'   => $card->entity_id,
                         'card_id'     => $card->id,
                         'order_id'    => null,
+                        'manager_id'  => $request->user()?->id,
                         'amount'      => $reward->points_required,
                         'reward_id'   => $reward->id,
                         'points'      => -$reward->points_required,
@@ -150,13 +151,15 @@ class ConversionController extends Controller
                     ]);
                 } catch (\Illuminate\Database\QueryException $qe) {
                     $cc = new CardCredit();
-                    $cc->entity_id = $card->entity_id;
-                    $cc->card_id  = $card->id;
-                    $cc->order_id = 0;
-                    $cc->amount   = $reward->points_required;
-                    $cc->credit   = -$reward->points_required;
+                    $cc->entity_id  = $card->entity_id;
+                    $cc->card_id   = $card->id;
+                    $cc->order_id  = 0;
+                    $cc->manager_id = $request->user()?->id;
+                    $cc->amount    = $reward->points_required;
+                    $cc->credit    = -$reward->points_required;
                     $cc->save();
                 }
+
 
                 // Diminuer le stock si limité
                 if ($reward->stock !== null) {
