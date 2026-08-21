@@ -534,14 +534,26 @@ class ShopOrderController extends Controller
                 ?? data_get($payload, 'order_reference')
                 ?? data_get($payload, 'data.order_reference')
                 ?? data_get($payload, 'payment_reference')
-                ?? data_get($payload, 'data.payment_reference')
-                ?? $gatewayRef;
+                ?? data_get($payload, 'data.payment_reference');
+
+            // Si extra_data est nul dans le webhook envoyé par Fayko, extraire la référence depuis 'name' (ex: "Commande boutique SHO-VSIIZAOF")
+            if (!$orderReference && !empty($payload['name'])) {
+                if (preg_match('/(SHO-[A-Z0-9]+)/i', $payload['name'], $matches)) {
+                    $orderReference = $matches[1];
+                }
+            }
+
+            if (!$orderReference) {
+                $orderReference = $gatewayRef;
+            }
 
             Log::info('[ShopOrderController@webhookFayko] Analyse des références', [
                 'order_reference_trouvee' => $orderReference,
                 'gateway_reference_trouvee' => $gatewayRef,
                 'extra_data_decode' => $extraData,
+                'name_payload' => $payload['name'] ?? null,
             ]);
+
 
             if (!$orderReference) {
                 $res = response()->json([
