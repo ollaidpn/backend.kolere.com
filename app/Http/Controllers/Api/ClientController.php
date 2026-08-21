@@ -95,21 +95,23 @@ class ClientController extends Controller
 
     public function store(Request $request): JsonResponse
     {
-        try {
+            // Validation des entrées
             $validated = $request->validate([
                 'name' => 'required|string|max:255',
-                'email' => 'required|email|unique:users,email',
+                'email' => 'nullable|email|unique:users,email',
                 'phone' => 'required|string|max:20',
-                'address' => 'required|string|max:500',
+                'address' => 'nullable|string|max:500',
                 'password' => 'nullable|string|min:6',
+                'card_id' => 'nullable|exists:cards,id',
             ]);
 
-            // Créer le client
+            // Créer le client (email par défaut si vide)
+            $dummyEmail = 'client_' . time() . '_' . rand(100, 999) . '@boutique.local';
             $client = User::create([
                 'name' => $validated['name'],
-                'email' => $validated['email'],
+                'email' => $validated['email'] ?: $dummyEmail,
                 'phone' => $validated['phone'],
-                'address' => $validated['address'],
+                'address' => $validated['address'] ?? null,
                 'password' => $validated['password'] ? Hash::make($validated['password']) : Hash::make('password123'),
             ]);
 
@@ -119,18 +121,44 @@ class ClientController extends Controller
             }
             $entity = \App\Models\Entity::find($entityId);
 
-            // Créer la carte de fidélité
-            $card = Card::create([
-                'user_id' => $client->id,
-                'entity_id' => $entityId,
-                'card_type_id' => 1, // Type de carte par défaut
-                'number' => 'CARD-' . str_pad($client->id, 8, '0', STR_PAD_LEFT),
-                'points' => 0,
-                'status' => 'active',
-            ]);
+            // Liaison de la carte de fidélité (Physique sélectionnée OU Virtuelle automatique)
+            if (!empty($validated['card_id'])) {
+                $card = Card::where('entity_id', $entityId)
+                    ->where('id', $validated['card_id'])
+                    ->whereNull('user_id')
+                    ->first();
+
+                if ($card) {
+                    $card->update([
+                        'user_id' => $client->id,
+                        'status' => 'active',
+                    ]);
+                } else {
+                    // Si carte introuvable ou déjà prise, fallback création automatique
+                    $card = Card::create([
+                        'user_id' => $client->id,
+                        'entity_id' => $entityId,
+                        'card_type_id' => 1,
+                        'number' => 'CARD-' . str_pad($client->id, 8, '0', STR_PAD_LEFT),
+                        'points' => 0,
+                        'status' => 'active',
+                    ]);
+                }
+            } else {
+                // Créer la carte de fidélité virtuelle automatique par défaut
+                $card = Card::create([
+                    'user_id' => $client->id,
+                    'entity_id' => $entityId,
+                    'card_type_id' => 1,
+                    'number' => 'CARD-' . str_pad($client->id, 8, '0', STR_PAD_LEFT),
+                    'points' => 0,
+                    'status' => 'active',
+                ]);
+            }
 
             $cardRef = $card->reference ?? $card->number;
             $shopName = $entity ? $entity->name : 'votre boutique';
+
 
             // 1. Envoi de l'Email de bienvenue (Automatique)
             if ($client->email) {
