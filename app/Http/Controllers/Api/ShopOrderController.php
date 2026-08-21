@@ -533,12 +533,22 @@ class ShopOrderController extends Controller
                 }
             }
 
+            // Tentative 3 : si la référence du webhook ne correspond à aucune commande enregistrée (ex: ID du checkout Fayko),
+            // on associe le webhook à la dernière commande en attente de paiement (status_payment = 'pending')
+            if (!$order) {
+                $order = ShopOrder::where('status_payment', 'pending')
+                    ->where('payment_method', 'online')
+                    ->orderByDesc('id')
+                    ->first();
+            }
+
             if (!$order) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Commande introuvable',
                 ], 404);
             }
+
 
 
             $paymentLog = ShopPaymentLog::where('shop_order_id', $order->id)->latest()->first();
