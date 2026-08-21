@@ -785,5 +785,62 @@ class AuthController extends Controller
             'role' => 'client',
         ]);
     }
+
+    public function updateManagerProfile(Request $request): JsonResponse
+    {
+        try {
+            $manager = $request->user();
+            $validator = Validator::make($request->all(), [
+                'name' => 'required|string|max:255',
+                'phone' => 'nullable|string|max:30',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json(['message' => 'Données invalides', 'errors' => $validator->errors()], 422);
+            }
+
+            $manager->update([
+                'name' => $request->input('name'),
+                'phone' => $request->input('phone'),
+            ]);
+
+            return response()->json([
+                'message' => 'Profil mis à jour avec succès',
+                'data' => $manager->makeHidden(['password']),
+            ]);
+        } catch (\Exception $e) {
+            Log::error('[AuthController@updateManagerProfile] Error', ['message' => $e->getMessage()]);
+            return response()->json(['message' => 'Erreur de mise à jour'], 500);
+        }
+    }
+
+    public function updateManagerPassword(Request $request): JsonResponse
+    {
+        try {
+            $manager = $request->user();
+            $validator = Validator::make($request->all(), [
+                'current_password' => 'required|string',
+                'password' => 'required|string|min:8|confirmed',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json(['message' => 'Données invalides', 'errors' => $validator->errors()], 422);
+            }
+
+            if (!Hash::check($request->input('current_password'), $manager->password)) {
+                return response()->json(['message' => 'Mot de passe actuel incorrect'], 400);
+            }
+
+            $manager->update([
+                'password' => Hash::make($request->input('password')),
+            ]);
+
+            return response()->json(['message' => 'Mot de passe mis à jour avec succès']);
+        } catch (\Exception $e) {
+            Log::error('[AuthController@updateManagerPassword] Error', ['message' => $e->getMessage()]);
+            return response()->json(['message' => 'Erreur de mise à jour'], 500);
+        }
+    }
 }
+
 

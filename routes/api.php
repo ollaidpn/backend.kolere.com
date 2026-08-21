@@ -155,6 +155,9 @@ Route::prefix('backoffice')->middleware(['auth:sanctum', 'role:manager', 'resolv
             'data' => app(RbacService::class)->managerPayload($request->user()),
         ]);
     });
+    Route::put('/me/profile', [AuthController::class, 'updateManagerProfile']);
+    Route::put('/me/password', [AuthController::class, 'updateManagerPassword']);
+
 
     // Invitations managers
     Route::post('/invitations', [InvitationController::class, 'store']);
