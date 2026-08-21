@@ -292,6 +292,22 @@ class ShopOrderController extends Controller
                 ]);
             });
 
+            // Notification In-App Backoffice (Système)
+            try {
+                \App\Models\Notification::create([
+                    'entity_id' => $entityId,
+                    'user_id' => null,
+                    'manager_id' => null,
+                    'type' => 'order_created',
+                    'title' => 'Nouvelle commande ' . $order->reference,
+                    'message' => 'Une nouvelle commande de ' . number_format($order->total, 0, ',', ' ') . ' FCFA a été passée par ' . data_get($validated['client_infos'], 'name', 'un client') . '.',
+                    'is_read' => false,
+                ]);
+            } catch (\Throwable $notifErr) {
+                Log::error('[ShopOrderController@storePublic] Erreur création notification backoffice', ['error' => $notifErr->getMessage()]);
+            }
+
+
             // Envoi des notifications par mail (client & admin)
             try {
                 $entity = Entity::find($entityId);
@@ -678,6 +694,22 @@ class ShopOrderController extends Controller
                         'status_order' => in_array($order->status_order, ['pending', 'confirmed'], true) ? 'confirmed' : $order->status_order,
                         'payment_reference' => $gatewayReference ?: $order->payment_reference,
                     ]);
+
+                    // Notification In-App Backoffice de Paiement Reçu
+                    try {
+                        \App\Models\Notification::create([
+                            'entity_id' => $order->entity_id,
+                            'user_id' => null,
+                            'manager_id' => null,
+                            'type' => 'payment_success',
+                            'title' => 'Paiement confirmé : ' . $order->reference,
+                            'message' => 'Le paiement de ' . number_format($order->total, 0, ',', ' ') . ' FCFA a été validé avec succès en ligne pour la commande ' . $order->reference . '.',
+                            'is_read' => false,
+                        ]);
+                    } catch (\Throwable $notifErr) {
+                        Log::error('[ShopOrderController@webhookFayko] Erreur création notification paiement', ['error' => $notifErr->getMessage()]);
+                    }
+
 
                     // 1. Envoi des e-mails de confirmation (Client + Boutique/Admin)
                     try {
