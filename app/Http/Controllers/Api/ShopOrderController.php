@@ -562,37 +562,32 @@ class ShopOrderController extends Controller
                     'message' => 'Référence de commande introuvable',
                 ], 404);
                 Log::warning('[ShopOrderController@webhookFayko] Échec: Référence introuvable', ['response' => $res->getContent()]);
-                return $res;
+            // 1. Recherche du PaymentLog par transaction_id exact de Fayko
+            $paymentLog = null;
+            if ($gatewayRef) {
+                $paymentLog = ShopPaymentLog::where('transaction_id', $gatewayRef)
+                    ->orWhere('gateway_reference', $gatewayRef)
+                    ->latest()
+                    ->first();
+            }
+
+            // Si non trouvé par transaction_id, chercher par référence du log
+            if (!$paymentLog && $orderReference) {
+                $paymentLog = ShopPaymentLog::where('reference', $orderReference)->latest()->first();
             }
 
             $order = null;
-
-            // Tentative 1 : recherche prioritaire stricte par transaction_id dans la table ShopPaymentLog
-            if ($gatewayRef) {
-                $paymentLog = ShopPaymentLog::where('transaction_id', $gatewayRef)->latest()->first();
-                if ($paymentLog && $paymentLog->shop_order_id) {
-                    $order = ShopOrder::find($paymentLog->shop_order_id);
-                }
+            if ($paymentLog && $paymentLog->shop_order_id) {
+                $order = ShopOrder::find($paymentLog->shop_order_id);
             }
 
-
-
-            // Tentative 2 : trouver la commande directement par sa référence locale
             if (!$order && $orderReference) {
                 $order = $this->resolveOrderByReference((string) $orderReference);
             }
 
-
-            // Tentative 3 : si la référence du webhook ne correspond à aucune commande enregistrée (ex: ID du checkout Fayko),
-            // on associe le webhook à la dernière commande en attente de paiement (status_payment = 'pending')
-            if (!$order) {
-                $order = ShopOrder::where('status_payment', 'pending')
-                    ->where('payment_method', 'online')
-                    ->orderByDesc('id')
-                    ->first();
-                if ($order) {
-                    Log::info("[ShopOrderController@webhookFayko] Commande associèe via Fallback (dernier pending)", ['order_id' => $order->id, 'reference' => $order->reference]);
-                }
+            if (!$order && $paymentLog) {
+                // Fallback de sécurité si le log existe sans shop_order_id
+                $order = ShopOrder::where('status_payment', 'pending')->latest()->first();
             }
 
             if (!$order) {
@@ -600,9 +595,14 @@ class ShopOrderController extends Controller
                     'success' => false,
                     'message' => 'Commande introuvable',
                 ], 404);
-                Log::warning('[ShopOrderController@webhookFayko] Échec final: Commande non trouvée', ['searched_ref' => $orderReference, 'response' => $res->getContent()]);
+                Log::warning('[ShopOrderController@webhookFayko] Échec final: Commande/PaymentLog non trouvé', [
+                    'gateway_ref' => $gatewayRef,
+                    'order_ref' => $orderReference,
+                    'response' => $res->getContent()
+                ]);
                 return $res;
             }
+
 
             Log::info("[ShopOrderController@webhookFayko] Commande trouvée", [
                 'order_id' => $order->id,
