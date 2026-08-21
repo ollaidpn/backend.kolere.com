@@ -494,7 +494,7 @@ class ShopOrderController extends Controller
             }
 
             // Webhook Checkout (Commandes & Paiements)
-            $extraData = $payload['extra_data'] ?? null;
+            $extraData = $payload['extra_data'] ?? data_get($payload, 'data.extra_data') ?? null;
             if (is_string($extraData)) {
                 $decoded = json_decode($extraData, true);
                 if (json_last_error() === JSON_ERROR_NONE) {
@@ -502,12 +502,18 @@ class ShopOrderController extends Controller
                 }
             }
 
-            $orderReference = data_get($payload, 'order_reference')
+            $gatewayRef = data_get($payload, 'reference')
+                ?? data_get($payload, 'data.reference')
                 ?? data_get($payload, 'transaction_id')
-                ?? data_get($payload, 'reference')
+                ?? data_get($payload, 'data.transaction_id');
+
+            $orderReference = data_get($extraData, 'order_reference')
+                ?? data_get($extraData, 'payment_reference')
+                ?? data_get($payload, 'order_reference')
+                ?? data_get($payload, 'data.order_reference')
                 ?? data_get($payload, 'payment_reference')
-                ?? data_get($extraData, 'order_reference')
-                ?? data_get($extraData, 'payment_reference');
+                ?? data_get($payload, 'data.payment_reference')
+                ?? $gatewayRef;
 
             if (!$orderReference) {
                 return response()->json([
@@ -516,13 +522,24 @@ class ShopOrderController extends Controller
                 ], 404);
             }
 
+            // Tentative 1 : trouver la commande directement par la référence
             $order = $this->resolveOrderByReference((string) $orderReference);
+
+            // Tentative 2 : si non trouvée, rechercher la commande via le log de paiement par la référence Gateway Fayko
+            if (!$order && $gatewayRef) {
+                $logByGateway = ShopPaymentLog::where('gateway_reference', $gatewayRef)->first();
+                if ($logByGateway) {
+                    $order = ShopOrder::find($logByGateway->shop_order_id);
+                }
+            }
+
             if (!$order) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Commande introuvable',
                 ], 404);
             }
+
 
             $paymentLog = ShopPaymentLog::where('shop_order_id', $order->id)->latest()->first();
             if (!$paymentLog) {
