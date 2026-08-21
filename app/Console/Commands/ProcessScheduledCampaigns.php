@@ -3,9 +3,11 @@
 namespace App\Console\Commands;
 
 use App\Models\Campaign;
+use App\Models\Entity;
 use App\Models\Notification;
 use App\Services\FirebaseNotificationService;
 use App\Services\NotificationsService;
+use App\Services\ShopMailFromResolver;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 
@@ -109,11 +111,15 @@ class ProcessScheduledCampaigns extends Command
                     }
 
                     if (!empty($emails)) {
+                        $entity = Entity::find($campaign->entity_id);
                         foreach ($emails as $email) {
                             try {
-                                \Illuminate\Support\Facades\Mail::raw($campaign->message, function ($msg) use ($email, $campaign) {
+                                \Illuminate\Support\Facades\Mail::raw($campaign->message, function ($msg) use ($email, $campaign, $entity) {
                                     $msg->to($email)
                                         ->subject($campaign->title);
+                                    app(ShopMailFromResolver::class)->applyTo(function (string $address, string $name) use ($msg) {
+                                        $msg->from($address, $name);
+                                    }, $entity);
                                 });
                             } catch (\Throwable $mErr) {
                                 Log::error("[Cron-Campaigns] ❌ Échec envoi email à {$email}: " . $mErr->getMessage());

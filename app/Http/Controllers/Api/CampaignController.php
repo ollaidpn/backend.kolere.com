@@ -201,24 +201,19 @@ class CampaignController extends Controller
         // 4. Si l'envoi est immédiat (non programmé), traiter l'envoi tout de suite
         if (!$request->isScheduled) {
             $entity = \App\Models\Entity::find($entityId);
+            $from = app(ShopMailFromResolver::class)->resolve($entity, $request);
 
             // A. EMAIL IMMÉDIAT
             if ($type === 'email') {
-                $fromAddress = ($entity && !empty($entity->email)) 
-                    ? $entity->email 
-                    : config('mail.from.address', env('MAIL_FROM_ADDRESS', 'noreply@kolere.sn'));
-                $fromName = ($entity && !empty($entity->name)) 
-                    ? $entity->name 
-                    : config('mail.from.name', 'KOLERE');
                 $emailSubject = $request->title;
 
                 foreach ($recipients as $idx => $recipient) {
                     if (!empty($recipient['email'])) {
                         try {
-                            \Illuminate\Support\Facades\Mail::raw($request->message, function ($msg) use ($recipient, $emailSubject, $fromAddress, $fromName) {
+                            \Illuminate\Support\Facades\Mail::raw($request->message, function ($msg) use ($recipient, $emailSubject, $from) {
                                 $msg->to($recipient['email'])
                                     ->subject($emailSubject)
-                                    ->from($fromAddress, $fromName);
+                                    ->from($from['address'], $from['name']);
                             });
                             $recipients[$idx]['status'] = 'success';
                             $recipients[$idx]['sent_at'] = now()->toDateTimeString();

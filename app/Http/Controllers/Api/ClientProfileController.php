@@ -14,6 +14,7 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Validator;
+use App\Services\ShopMailFromResolver;
 
 class ClientProfileController extends Controller
 {
@@ -67,9 +68,13 @@ class ClientProfileController extends Controller
                     'entity' => $profileData->card->entity ? [
                         'name' => $profileData->card->entity->name,
                         'logo' => $profileData->card->entity->logo,
+                        'logo_url' => $profileData->card->entity->logo_url ?? $profileData->card->entity->logo,
+                        'primary_color' => $profileData->card->entity->primary_color ?? '#0f172a',
+                        'secondary_color' => $profileData->card->entity->secondary_color ?? '#f8fafc',
                         'address' => $profileData->card->entity->address,
                         'phone' => $profileData->card->entity->phone,
                     ] : null,
+
                 ];
             }
 
@@ -154,9 +159,13 @@ class ClientProfileController extends Controller
                     'entity' => $freshUser->card->entity ? [
                         'name' => $freshUser->card->entity->name,
                         'logo' => $freshUser->card->entity->logo,
+                        'logo_url' => $freshUser->card->entity->logo_url ?? $freshUser->card->entity->logo,
+                        'primary_color' => $freshUser->card->entity->primary_color ?? '#0f172a',
+                        'secondary_color' => $freshUser->card->entity->secondary_color ?? '#f8fafc',
                         'address' => $freshUser->card->entity->address,
                         'phone' => $freshUser->card->entity->phone,
                     ] : null,
+
                 ];
             }
 
@@ -337,8 +346,11 @@ class ClientProfileController extends Controller
             try {
                 Mail::raw(
                     "Votre code OTP de suppression de compte est : {$otp}\nCe code expire dans 10 minutes.",
-                    function ($message) use ($user) {
+                    function ($message) use ($user, $request) {
                         $message->to($user->email)->subject('Code OTP de suppression de compte');
+                        app(ShopMailFromResolver::class)->applyTo(function (string $address, string $name) use ($message) {
+                            $message->from($address, $name);
+                        }, null, $request);
                     }
                 );
             } catch (\Throwable $mailError) {

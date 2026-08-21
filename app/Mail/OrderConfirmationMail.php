@@ -4,6 +4,7 @@ namespace App\Mail;
 
 use App\Models\Entity;
 use App\Models\ShopOrder;
+use App\Services\ShopMailFromResolver;
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Address;
@@ -30,8 +31,7 @@ class OrderConfirmationMail extends Mailable
     {
         $storeName = $this->entity->name ?: 'Boutique';
         $clientName = data_get($this->order->client_infos, 'name') ?: 'Client';
-        $fromAddress = $this->entity->email ?: config('mail.from.address');
-        $fromName = $this->entity->name ?: config('mail.from.name');
+        $from = app(ShopMailFromResolver::class)->resolve($this->entity);
 
         if ($this->recipientType === 'admin') {
             $subject = "Nouvelle commande de : {$clientName} | {$storeName}";
@@ -40,7 +40,7 @@ class OrderConfirmationMail extends Mailable
         }
 
         return new Envelope(
-            from: new Address($fromAddress, $fromName),
+            from: new Address($from['address'], $from['name']),
             subject: $subject,
         );
     }

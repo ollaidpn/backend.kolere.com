@@ -19,6 +19,7 @@ use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
+use App\Services\ShopMailFromResolver;
 
 class AuthController extends Controller
 {
@@ -115,8 +116,11 @@ class AuthController extends Controller
             try {
                 Mail::raw(
                     "Votre code OTP d'inscription est : {$otp}\nCe code expire dans 15 minutes.",
-                    function ($message) use ($email) {
+                    function ($message) use ($email, $request) {
                         $message->to($email)->subject("Code OTP d'inscription");
+                        app(ShopMailFromResolver::class)->applyTo(function (string $address, string $name) use ($message) {
+                            $message->from($address, $name);
+                        }, null, $request);
                     }
                 );
             } catch (\Throwable $mailError) {
@@ -547,8 +551,11 @@ class AuthController extends Controller
             try {
                 Mail::raw(
                     "Votre code OTP de réinitialisation est : {$otp}\nCe code expire dans 10 minutes.",
-                    function ($message) use ($user) {
+                    function ($message) use ($user, $request) {
                         $message->to($user->email)->subject('Code OTP de réinitialisation');
+                        app(ShopMailFromResolver::class)->applyTo(function (string $address, string $name) use ($message) {
+                            $message->from($address, $name);
+                        }, null, $request);
                     }
                 );
             } catch (\Throwable $mailError) {

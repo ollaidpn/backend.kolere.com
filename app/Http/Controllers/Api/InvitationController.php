@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
+use App\Services\ShopMailFromResolver;
 
 class InvitationController extends Controller
 {
@@ -86,8 +87,11 @@ class InvitationController extends Controller
                 try {
                     Mail::raw(
                         "Bonjour {$invitation->name},\n\nVous avez été invité(e) à rejoindre votre espace manager.\n\nLien d'activation : {$inviteLink}\n\nCe lien permet de compléter votre inscription et activer votre compte.",
-                        function ($message) use ($invitation) {
+                        function ($message) use ($invitation, $request) {
                             $message->to($invitation->email)->subject("Invitation manager - {$invitation->name}");
+                            app(ShopMailFromResolver::class)->applyTo(function (string $address, string $name) use ($message) {
+                                $message->from($address, $name);
+                            }, null, $request);
                         }
                     );
                 } catch (\Throwable $mailError) {

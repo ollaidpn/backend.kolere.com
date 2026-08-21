@@ -3,6 +3,7 @@
 namespace App\Mail;
 
 use App\Models\Entity;
+use App\Services\ShopMailFromResolver;
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Address;
@@ -27,11 +28,10 @@ class DomainActivationRequestMail extends Mailable
 
     public function envelope(): Envelope
     {
+        $from = app(ShopMailFromResolver::class)->resolve($this->entity);
+
         return new Envelope(
-            from: new Address(
-                $this->entity->email ?: config('mail.from.address'),
-                $this->entity->name ?: config('mail.from.name')
-            ),
+            from: new Address($from['address'], $from['name']),
             subject: 'activation de domaine',
         );
     }
