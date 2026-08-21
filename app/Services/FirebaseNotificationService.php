@@ -22,19 +22,9 @@ class FirebaseNotificationService
 
     public function __construct()
     {
-        $candidatePaths = array_filter([
-            env('FIREBASE_CREDENTIALS_PATH'),
-            env('GOOGLE_APPLICATION_CREDENTIALS'),
-            storage_path('app/kolere-firebase-credentials.json'),
-            storage_path('app/firebase-credentials.json'),
-        ]);
+        $resolvedPath = storage_path('app/firebase-credentials.json');
 
-        foreach ($candidatePaths as $path) {
-            if (!is_string($path)) continue;
-
-            $resolvedPath = str_starts_with($path, '/') ? $path : base_path($path);
-            if (!file_exists($resolvedPath)) continue;
-
+        if (file_exists($resolvedPath)) {
             try {
                 $factory = (new Factory)->withServiceAccount($resolvedPath);
                 $this->messaging = $factory->createMessaging();
@@ -43,15 +33,12 @@ class FirebaseNotificationService
                 Log::info('[FCM] ✅ Service initialisé avec credentials', [
                     'credentials_path' => $resolvedPath,
                 ]);
-                break;
             } catch (\Throwable $e) {
                 Log::error('[FCM] ❌ Erreur chargement credentials Firebase: ' . $e->getMessage());
             }
-        }
-
-        if (!$this->ready) {
+        } else {
             Log::warning('[FCM] ⚠️ Firebase credentials introuvables ou invalides, service non prêt', [
-                'checked_paths' => array_values($candidatePaths),
+                'checked_path' => $resolvedPath,
             ]);
         }
     }
