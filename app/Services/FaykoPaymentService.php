@@ -161,6 +161,7 @@ class FaykoPaymentService
             'success' => $res['success'] ?? true,
             'message' => $res['message'] ?? null,
             'data' => array_merge($data, [
+                'request_reference' => $data['request_reference'] ?? $data['payout_reference'] ?? $data['reference'] ?? null,
                 'payout_reference' => $data['payout_reference'] ?? $data['request_reference'] ?? $data['reference'] ?? null,
             ]),
             'raw' => $res,
@@ -192,7 +193,7 @@ class FaykoPaymentService
             'data' => array_merge($data, [
                 'reference' => $data['reference'] ?? $body['reference'],
                 'request_reference' => $data['request_reference'] ?? $body['reference'],
-                'payout_reference' => $data['payout_reference'] ?? null,
+                'payout_reference' => $data['payout_reference'] ?? $data['request_reference'] ?? null,
             ]),
             'raw' => $res,
         ];

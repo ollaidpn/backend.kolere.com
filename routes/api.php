@@ -37,6 +37,8 @@ use App\Http\Controllers\Api\PaymentRestrictionController;
 use App\Http\Controllers\Api\UploadController;
 use App\Http\Controllers\Api\BackofficeNotificationController;
 use App\Http\Controllers\Api\ClientNotificationController;
+use App\Http\Controllers\Api\BackofficeRbacController;
+use App\Services\RbacService;
 
 /*
 |--------------------------------------------------------------------------
@@ -145,7 +147,9 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'role:admin'])->group(functi
 // ─── Espace Backoffice (pharmacie) ───────────────────────────────────────────
 Route::prefix('backoffice')->middleware(['auth:sanctum', 'role:manager', 'resolve.entity'])->group(function () {
     Route::get('/me', function (Request $request) {
-        return response()->json(['data' => $request->user()]);
+        return response()->json([
+            'data' => app(RbacService::class)->managerPayload($request->user()),
+        ]);
     });
 
     // Invitations managers
@@ -204,6 +208,18 @@ Route::prefix('backoffice')->middleware(['auth:sanctum', 'role:manager', 'resolv
 
     Route::get('/notifications', [BackofficeNotificationController::class, 'index']);
     Route::post('/notifications/{id}/read', [BackofficeNotificationController::class, 'markRead']);
+
+    // RBAC boutique
+    Route::prefix('rbac')->group(function () {
+        Route::get('/catalog', [BackofficeRbacController::class, 'catalog'])->middleware('permission:backoffice.settings.roles.read');
+        Route::get('/roles', [BackofficeRbacController::class, 'roles'])->middleware('permission:backoffice.settings.roles.read');
+        Route::post('/roles', [BackofficeRbacController::class, 'storeRole'])->middleware('permission:backoffice.settings.roles.create');
+        Route::put('/roles/{role}', [BackofficeRbacController::class, 'updateRole'])->middleware('permission:backoffice.settings.roles.update');
+        Route::delete('/roles/{role}', [BackofficeRbacController::class, 'destroyRole'])->middleware('permission:backoffice.settings.roles.delete');
+        Route::get('/managers', [BackofficeRbacController::class, 'managers'])->middleware('permission:backoffice.settings.users.read');
+        Route::patch('/managers/{manager}/role', [BackofficeRbacController::class, 'assignManagerRole'])->middleware('permission:backoffice.settings.users.assign_role');
+        Route::get('/me', [BackofficeRbacController::class, 'me']);
+    });
 
     // Dashboard backoffice
     Route::get('/dashboard/stats', [BackofficeDashboardController::class, 'getStats']);
@@ -274,7 +290,9 @@ Route::prefix('backoffice')->middleware(['auth:sanctum', 'role:manager', 'resolv
 // ─── Espace Manager (table managers) ─────────────────────────────────────────
 Route::prefix('manager')->middleware(['auth:sanctum', 'role:manager'])->group(function () {
     Route::get('/me', function (Request $request) {
-        return response()->json(['data' => $request->user()]);
+        return response()->json([
+            'data' => app(RbacService::class)->managerPayload($request->user()),
+        ]);
     });
 });
 

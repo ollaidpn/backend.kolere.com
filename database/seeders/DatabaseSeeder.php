@@ -21,6 +21,7 @@ use App\Models\AlertApp;
 use App\Models\AlertMessage;
 use App\Models\ShopCategory;
 use App\Models\ShopBrand;
+use App\Models\Role;
 
 class DatabaseSeeder extends Seeder
 {
@@ -35,6 +36,7 @@ class DatabaseSeeder extends Seeder
             'alert_messages', 'alert_apps', 'card_credits', 'discounts',
             'orders', 'cards', 'card_types', 'links', 'managers', 'users',
             'entities', 'domains', 'invitations', 'notification_reads', 'notifications', 'terms',
+            'role_permissions', 'permissions', 'roles',
         ];
 
         foreach ($tables as $table) {
@@ -62,6 +64,8 @@ class DatabaseSeeder extends Seeder
                     'phone'     => '77 000 00 00',
                 ]
             );
+
+            $this->call(PermissionsSeeder::class);
 
             // ╔══════════════════════════════════════╗
             // ║  1. DOMAINS                          ║
@@ -110,7 +114,12 @@ class DatabaseSeeder extends Seeder
                 'reference' => 'MA-001',
             ]);
 
-            Link::create(['manager_id' => $manager->id, 'entity_id' => $pharmacie->id, 'is_admin' => true]);
+            Link::create([
+                'manager_id' => $manager->id,
+                'entity_id' => $pharmacie->id,
+                'is_admin' => true,
+                'role_id' => null,
+            ]);
 
             // ╔══════════════════════════════════════╗
             // ║  4. USERS (Clients)                   ║

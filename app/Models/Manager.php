@@ -37,6 +37,32 @@ class Manager extends Authenticatable
         return $this->links();
     }
 
+    public function currentRole()
+    {
+        $link = $this->currentLink()->with('role.permissions')->first();
+
+        if (! $link || $link->is_admin) {
+            return null;
+        }
+
+        return $link->role;
+    }
+
+    public function permissions()
+    {
+        $link = $this->currentLink()->with('role.permissions')->first();
+
+        if (! $link) {
+            return collect();
+        }
+
+        if ($link->is_admin) {
+            return app(\App\Services\RbacService::class)->allPermissions();
+        }
+
+        return $link->role?->permissions ?? collect();
+    }
+
     public function alertApps()
     {
         return $this->hasMany(AlertApp::class);

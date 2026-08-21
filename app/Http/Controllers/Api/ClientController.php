@@ -95,6 +95,7 @@ class ClientController extends Controller
 
     public function store(Request $request): JsonResponse
     {
+        try {
             // Validation des entrées
             $validated = $request->validate([
                 'name' => 'required|string|max:255',
@@ -213,7 +214,6 @@ class ClientController extends Controller
                 'message' => 'Client créé avec succès',
                 'data' => $client->load('card')
             ], 201);
-
         } catch (ValidationException $e) {
             throw $e;
         } catch (\Exception $e) {
