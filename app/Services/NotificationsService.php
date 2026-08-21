@@ -183,7 +183,31 @@ class NotificationsService
                 return ['success' => false, 'message' => 'Clés API Diotko SMS non configurées'];
             }
 
+            // 1. Vérification préalable du solde SMS
+            $balanceCheck = $this->getBalance();
+            if (!$balanceCheck['success']) {
+                Log::warning('NotificationsService: Échec de la vérification du solde SMS', ['result' => $balanceCheck]);
+                return ['success' => false, 'message' => 'Impossible de vérifier le solde SMS. Envoi annulé.'];
+            }
+
+            $currentBalance = (int) ($balanceCheck['sms_balance'] ?? 0);
+            $requiredSms = count($formattedRecipients);
+
+            if ($currentBalance < $requiredSms) {
+                Log::warning('NotificationsService: Solde SMS insuffisant pour procéder à l\'envoi', [
+                    'solde_actuel' => $currentBalance,
+                    'sms_requis'  => $requiredSms,
+                ]);
+                return [
+                    'success' => false,
+                    'message' => "Solde SMS insuffisant ({$currentBalance} SMS disponible(s), {$requiredSms} requis). Veuillez recharger votre compte SMS.",
+                    'insufficient_balance' => true,
+                    'current_balance' => $currentBalance,
+                ];
+            }
+
             $recipientsValues = array_values($formattedRecipients);
+
 
             $payload = [
                 'to'      => count($recipientsValues) === 1 ? $recipientsValues[0] : $recipientsValues,
