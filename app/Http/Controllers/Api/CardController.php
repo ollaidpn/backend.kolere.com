@@ -183,68 +183,69 @@ class CardController extends Controller
     {
         try {
             $validated = $request->validate([
-                'user_id' => 'required|exists:users,id',
-                'card_type_id' => 'required|exists:card_types,id',
+                'reference' => 'required|string|max:255',
+                'user_id' => 'nullable|exists:users,id',
+                'card_type_id' => 'nullable|exists:card_types,id',
                 'initial_points' => 'nullable|integer|min:0',
             ]);
 
-            return DB::transaction(function () use ($validated, $request) {
-                // Vérifier si l'utilisateur n'a pas déjà une carte
-                $existingCardQuery = Card::where('user_id', $validated['user_id']);
-                if ($entityId = $this->entityId($request)) {
-                    $existingCardQuery->where('entity_id', $entityId);
-                }
-                $existingCard = $existingCardQuery->first();
-                if ($existingCard) {
-                    throw ValidationException::withMessages([
-                        'user_id' => ['Cet utilisateur possède déjà une carte de fidélité']
-                    ]);
-                }
+            $entityId = $this->entityId($request);
+            if (!$entityId) {
+                return response()->json(['message' => 'Entité courante introuvable'], 422);
+            }
 
-                $entityId = $this->entityId($request);
-                if (!$entityId) {
-                    throw ValidationException::withMessages([
-                        'entity_id' => ['Entité courante introuvable']
-                    ]);
-                }
+            $reference = trim($validated['reference']);
 
+            // Vérifier si la carte existe déjà pour cette entité
+            $existing = Card::where('entity_id', $entityId)
+                ->where('reference', $reference)
+                ->first();
+
+            if ($existing) {
+                return response()->json([
+                    'message' => "La carte avec la référence '{$reference}' existe déjà dans cette boutique.",
+                    'data' => $existing->load(['user', 'cardType'])
+                ], 409);
+            }
+
+            return DB::transaction(function () use ($validated, $reference, $entityId) {
                 $card = Card::create([
-                    'user_id' => $validated['user_id'],
                     'entity_id' => $entityId,
-                    'card_type_id' => $validated['card_type_id'],
-                    'number' => 'CARD-' . str_pad($validated['user_id'], 8, '0', STR_PAD_LEFT),
+                    'user_id' => $validated['user_id'] ?? null,
+                    'card_type_id' => $validated['card_type_id'] ?? null,
+                    'reference' => $reference,
+                    'number' => $reference,
                     'points' => $validated['initial_points'] ?? 0,
+                    'credit' => $validated['initial_points'] ?? 0,
                     'status' => 'active',
                 ]);
 
-                // Créer un crédit de points si des points initiaux sont fournis
                 if (($validated['initial_points'] ?? 0) > 0) {
                     CardCredit::create([
                         'entity_id' => $card->entity_id,
                         'card_id' => $card->id,
                         'points' => $validated['initial_points'],
+                        'credit' => $validated['initial_points'],
                         'type' => 'initial',
                         'description' => 'Points initiaux',
                     ]);
                 }
 
-                Log::info('[CardController@store] Card created', [
-                    'card_id' => $card->id,
-                    'user_id' => $validated['user_id']
-                ]);
+                Log::info('[CardController@store] Carte ajoutée', ['card_id' => $card->id, 'reference' => $reference]);
 
                 return response()->json([
-                    'message' => 'Carte créée avec succès',
-                    'data' => $card->load(['user', 'cardType'])
+                    'message' => 'Carte enregistrée avec succès.',
+                    'data' => $card->fresh(['user', 'cardType'])
                 ], 201);
             });
         } catch (ValidationException $e) {
             throw $e;
         } catch (\Exception $e) {
             Log::error('[CardController@store] Error', ['message' => $e->getMessage()]);
-            return response()->json(['message' => 'Erreur lors de la création de la carte'], 500);
+            return response()->json(['message' => 'Erreur lors de la création de la carte : ' . $e->getMessage()], 500);
         }
     }
+
 
     public function addPoints(Request $request, $id): JsonResponse
     {
