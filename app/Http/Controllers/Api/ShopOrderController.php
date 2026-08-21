@@ -562,6 +562,9 @@ class ShopOrderController extends Controller
                     'message' => 'Référence de commande introuvable',
                 ], 404);
                 Log::warning('[ShopOrderController@webhookFayko] Échec: Référence introuvable', ['response' => $res->getContent()]);
+                return $res;
+            }
+
             // 1. Recherche du PaymentLog par transaction_id exact de Fayko
             $paymentLog = null;
             if ($gatewayRef) {
