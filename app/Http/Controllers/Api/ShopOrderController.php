@@ -483,14 +483,18 @@ class ShopOrderController extends Controller
                 'type' => $type,
                 'event' => $event,
                 'payload' => $payload,
+                'raw_content' => $request->getContent(),
             ]);
 
             // Webhook Payout (Retraits)
             if ($type === 'payout' || str_starts_with($event, 'payout.')) {
-                return response()->json([
+                Log::info('[ShopOrderController@webhookFayko] Webhook payout ignoré ou traité', ['event' => $event]);
+                $response = response()->json([
                     'success' => true,
                     'message' => 'Webhook payout recu.',
                 ]);
+                Log::info('[ShopOrderController@webhookFayko] Réponse payout envoyée', ['status' => $response->getStatusCode(), 'content' => $response->getContent()]);
+                return $response;
             }
 
             // Webhook Checkout (Commandes & Paiements)
@@ -515,11 +519,19 @@ class ShopOrderController extends Controller
                 ?? data_get($payload, 'data.payment_reference')
                 ?? $gatewayRef;
 
+            Log::info('[ShopOrderController@webhookFayko] Analyse des références', [
+                'order_reference_trouvee' => $orderReference,
+                'gateway_reference_trouvee' => $gatewayRef,
+                'extra_data_decode' => $extraData,
+            ]);
+
             if (!$orderReference) {
-                return response()->json([
+                $res = response()->json([
                     'success' => false,
                     'message' => 'Référence de commande introuvable',
                 ], 404);
+                Log::warning('[ShopOrderController@webhookFayko] Échec: Référence introuvable', ['response' => $res->getContent()]);
+                return $res;
             }
 
             // Tentative 1 : trouver la commande directement par la référence
@@ -540,16 +552,25 @@ class ShopOrderController extends Controller
                     ->where('payment_method', 'online')
                     ->orderByDesc('id')
                     ->first();
+                if ($order) {
+                    Log::info("[ShopOrderController@webhookFayko] Commande associèe via Fallback (dernier pending)", ['order_id' => $order->id, 'reference' => $order->reference]);
+                }
             }
 
             if (!$order) {
-                return response()->json([
+                $res = response()->json([
                     'success' => false,
                     'message' => 'Commande introuvable',
                 ], 404);
+                Log::warning('[ShopOrderController@webhookFayko] Échec final: Commande non trouvée', ['searched_ref' => $orderReference, 'response' => $res->getContent()]);
+                return $res;
             }
 
-
+            Log::info("[ShopOrderController@webhookFayko] Commande trouvée", [
+                'order_id' => $order->id,
+                'order_ref' => $order->reference,
+                'current_status' => $order->status_payment,
+            ]);
 
             $paymentLog = ShopPaymentLog::where('shop_order_id', $order->id)->latest()->first();
             if (!$paymentLog) {
@@ -615,10 +636,17 @@ class ShopOrderController extends Controller
                         'payment_reference' => $gatewayReference ?: $order->payment_reference,
                     ]);
 
-                    return response()->json([
+                    $res = response()->json([
                         'success' => true,
                         'message' => 'Webhook checkout recu.',
                     ]);
+
+                    Log::info('[ShopOrderController@webhookFayko] Succès: Commande payée et confirmée', [
+                        'order_id' => $order->id,
+                        'response' => $res->getContent(),
+                    ]);
+
+                    return $res;
                 }
 
                 if ($isFailedOrExpired) {
@@ -639,18 +667,24 @@ class ShopOrderController extends Controller
                     }
                 }
 
-                return response()->json([
+                $res = response()->json([
                     'success' => true,
                     'message' => 'Webhook checkout recu.',
                 ]);
+                Log::info('[ShopOrderController@webhookFayko] Traitement termine', ['response' => $res->getContent()]);
+                return $res;
             });
         } catch (\Exception $e) {
-            Log::error('[ShopOrderController@webhookFayko] Error', ['message' => $e->getMessage()]);
+            Log::error('[ShopOrderController@webhookFayko] Error Exception', [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
             return response()->json([
                 'success' => false,
                 'message' => 'Erreur webhook',
             ], 500);
         }
     }
+
 
 }
