@@ -565,16 +565,14 @@ class ShopOrderController extends Controller
                 return $res;
             }
 
-            // Tentative 1 : recherche prioritaire par la transaction_id Fayko dans la table ShopPaymentLog
+            // Tentative 1 : recherche prioritaire stricte par transaction_id dans la table ShopPaymentLog
             if ($gatewayRef) {
-                $paymentLog = ShopPaymentLog::where('transaction_id', $gatewayRef)
-                    ->orWhere('gateway_reference', $gatewayRef)
-                    ->latest()
-                    ->first();
+                $paymentLog = ShopPaymentLog::where('transaction_id', $gatewayRef)->latest()->first();
                 if ($paymentLog && $paymentLog->shop_order_id) {
                     $order = ShopOrder::find($paymentLog->shop_order_id);
                 }
             }
+
 
             // Tentative 2 : trouver la commande directement par sa référence locale
             if (!$order && $orderReference) {
