@@ -203,15 +203,21 @@ class CampaignController extends Controller
 
             // A. EMAIL IMMÉDIAT
             if ($type === 'email') {
+                $fromAddress = ($entity && !empty($entity->email)) 
+                    ? $entity->email 
+                    : config('mail.from.address', env('MAIL_FROM_ADDRESS', 'noreply@kolere.sn'));
+                $fromName = ($entity && !empty($entity->name)) 
+                    ? $entity->name 
+                    : config('mail.from.name', 'KOLERE');
+                $emailSubject = $request->title;
+
                 foreach ($recipients as $idx => $recipient) {
                     if (!empty($recipient['email'])) {
                         try {
-                            \Illuminate\Support\Facades\Mail::raw($request->message, function ($msg) use ($recipient, $request, $entity) {
+                            \Illuminate\Support\Facades\Mail::raw($request->message, function ($msg) use ($recipient, $emailSubject, $fromAddress, $fromName) {
                                 $msg->to($recipient['email'])
-                                    ->subject($request->title);
-                                if ($entity && $entity->email) {
-                                    $msg->from($entity->email, $entity->name);
-                                }
+                                    ->subject($emailSubject)
+                                    ->from($fromAddress, $fromName);
                             });
                             $recipients[$idx]['status'] = 'success';
                             $recipients[$idx]['sent_at'] = now()->toDateTimeString();
@@ -226,6 +232,7 @@ class CampaignController extends Controller
                     }
                 }
             }
+
 
             // B. SMS IMMÉDIAT
             if ($type === 'sms') {
