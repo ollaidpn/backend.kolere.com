@@ -190,6 +190,8 @@ class BackofficeEntityController extends Controller
 
             $request->validate([
                 'name'    => 'sometimes|string|max:255',
+                'primary_color' => 'nullable|string|max:30',
+                'secondary_color' => 'nullable|string|max:30',
                 'logo'    => 'nullable|file|mimes:jpg,jpeg,png,svg,webp|max:2048',
                 'address' => 'nullable|string|max:255',
                 'town'    => 'nullable|string|max:255',
@@ -208,10 +210,11 @@ class BackofficeEntityController extends Controller
             ]);
 
             $data = $request->only([
-                'name', 'address', 'town', 'country', 'email', 'phone', 'ccphone',
+                'name', 'primary_color', 'secondary_color', 'address', 'town', 'country', 'email', 'phone', 'ccphone',
                 'fayko_public_key', 'fayko_secret_key', 'fayko_webhook_key', 'fayko_mode',
                 'diotko_public_key', 'diotko_secret_key',
             ]);
+
 
 
             
