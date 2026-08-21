@@ -565,16 +565,22 @@ class ShopOrderController extends Controller
                 return $res;
             }
 
-            // Tentative 1 : trouver la commande directement par la référence
-            $order = $this->resolveOrderByReference((string) $orderReference);
-
-            // Tentative 2 : si non trouvée, rechercher la commande via le log de paiement par la référence Gateway Fayko
-            if (!$order && $gatewayRef) {
-                $logByGateway = ShopPaymentLog::where('gateway_reference', $gatewayRef)->first();
-                if ($logByGateway) {
-                    $order = ShopOrder::find($logByGateway->shop_order_id);
+            // Tentative 1 : recherche prioritaire par la transaction_id Fayko dans la table ShopPaymentLog
+            if ($gatewayRef) {
+                $paymentLog = ShopPaymentLog::where('transaction_id', $gatewayRef)
+                    ->orWhere('gateway_reference', $gatewayRef)
+                    ->latest()
+                    ->first();
+                if ($paymentLog && $paymentLog->shop_order_id) {
+                    $order = ShopOrder::find($paymentLog->shop_order_id);
                 }
             }
+
+            // Tentative 2 : trouver la commande directement par sa référence locale
+            if (!$order && $orderReference) {
+                $order = $this->resolveOrderByReference((string) $orderReference);
+            }
+
 
             // Tentative 3 : si la référence du webhook ne correspond à aucune commande enregistrée (ex: ID du checkout Fayko),
             // on associe le webhook à la dernière commande en attente de paiement (status_payment = 'pending')
