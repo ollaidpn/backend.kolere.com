@@ -15,15 +15,32 @@ class FaykoPaymentService
 
     public function __construct(?string $publicKey = null, ?string $secretKey = null, ?string $webhookSecret = null)
     {
-        $this->baseUrl = config('services.fayko.api_url', env('FAYKO_API_URL', 'https://artefacts.fayko.sn/api/v2/gateway'));
-        // S'assure que l'URL se termine par /api/v2/gateway
-        if (!str_contains($this->baseUrl, '/api/v2/gateway')) {
-            $this->baseUrl = rtrim($this->baseUrl, '/') . '/api/v2/gateway';
-        }
+        $this->baseUrl = $this->normalizeGatewayBaseUrl(
+            config('services.fayko.api_url', env('FAYKO_API_URL', 'https://artefacts.fayko.sn/api/v2/gateway'))
+        );
 
         $this->publicKey = $publicKey ?: config('services.fayko.public_key', env('FAYKO_PUBLIC_KEY', ''));
         $this->secretKey = $secretKey ?: config('services.fayko.secret_key', env('FAYKO_SECRET_KEY', ''));
         $this->webhookSecret = $webhookSecret ?: config('services.fayko.webhook_key', env('FAYKO_WEBHOOK_KEY', ''));
+    }
+
+    /**
+     * Force l'usage de la base v2 du gateway, même si l'env fournit une variante
+     * du style /api/v1 ou une racine sans suffixe.
+     */
+    protected function normalizeGatewayBaseUrl(string $baseUrl): string
+    {
+        $baseUrl = rtrim(trim($baseUrl), '/');
+
+        if ($baseUrl === '') {
+            return 'https://artefacts.fayko.sn/api/v2/gateway';
+        }
+
+        $baseUrl = preg_replace('#/api/v\d+/gateway$#', '', $baseUrl) ?? $baseUrl;
+        $baseUrl = preg_replace('#/api/v\d+$#', '', $baseUrl) ?? $baseUrl;
+        $baseUrl = preg_replace('#/gateway$#', '', $baseUrl) ?? $baseUrl;
+
+        return rtrim($baseUrl, '/') . '/api/v2/gateway';
     }
 
     /**
@@ -137,7 +154,17 @@ class FaykoPaymentService
      */
     public function initPayout(): array
     {
-        return $this->request('POST', '/payouts/request', []);
+        $res = $this->request('POST', '/payouts/request', []);
+        $data = $res['data'] ?? [];
+
+        return [
+            'success' => $res['success'] ?? true,
+            'message' => $res['message'] ?? null,
+            'data' => array_merge($data, [
+                'payout_reference' => $data['payout_reference'] ?? $data['request_reference'] ?? $data['reference'] ?? null,
+            ]),
+            'raw' => $res,
+        ];
     }
 
     /**
@@ -156,7 +183,19 @@ class FaykoPaymentService
             'note' => $payload['note'] ?? 'Demande de retrait',
         ];
 
-        return $this->request('POST', '/payouts/request', $body);
+        $res = $this->request('POST', '/payouts/request', $body);
+        $data = $res['data'] ?? [];
+
+        return [
+            'success' => $res['success'] ?? true,
+            'message' => $res['message'] ?? null,
+            'data' => array_merge($data, [
+                'reference' => $data['reference'] ?? $body['reference'],
+                'request_reference' => $data['request_reference'] ?? $body['reference'],
+                'payout_reference' => $data['payout_reference'] ?? null,
+            ]),
+            'raw' => $res,
+        ];
     }
 
     /**
@@ -206,4 +245,3 @@ class FaykoPaymentService
         return $res->json('data.providers') ?? [];
     }
 }
-

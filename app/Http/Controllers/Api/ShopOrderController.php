@@ -136,9 +136,32 @@ class ShopOrderController extends Controller
                 });
             }
 
-            $orders = $query->orderByDesc('created_at')->get();
+            // Filtre par statut tab (success, pending, failed, cancelled)
+            if ($request->tab) {
+                $tab = $request->tab;
+                if ($tab === 'success' || $tab === 'paid') {
+                    $query->where('status_payment', 'paid');
+                } elseif ($tab === 'pending') {
+                    $query->where('status_order', 'pending');
+                } elseif ($tab === 'failed' || $tab === 'cancelled') {
+                    $query->whereIn('status_order', ['cancelled'])
+                          ->orWhere('status_payment', 'refunded');
+                }
+            }
 
-            return response()->json(['data' => $orders]);
+            $perPage = (int) $request->get('per_page', 15);
+            $orders = $query->orderByDesc('created_at')->paginate($perPage);
+
+            return response()->json([
+                'data' => $orders->items(),
+                'meta' => [
+                    'current_page' => $orders->currentPage(),
+                    'last_page' => $orders->lastPage(),
+                    'per_page' => $orders->perPage(),
+                    'total' => $orders->total(),
+                ]
+            ]);
+
         } catch (\Exception $e) {
             Log::error('[ShopOrderController@index] Error', ['message' => $e->getMessage()]);
             return response()->json(['message' => 'Erreur lors du chargement des commandes'], 500);
