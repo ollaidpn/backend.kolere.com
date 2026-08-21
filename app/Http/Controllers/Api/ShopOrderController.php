@@ -565,6 +565,8 @@ class ShopOrderController extends Controller
                 return $res;
             }
 
+            $order = null;
+
             // Tentative 1 : recherche prioritaire stricte par transaction_id dans la table ShopPaymentLog
             if ($gatewayRef) {
                 $paymentLog = ShopPaymentLog::where('transaction_id', $gatewayRef)->latest()->first();
@@ -572,6 +574,7 @@ class ShopOrderController extends Controller
                     $order = ShopOrder::find($paymentLog->shop_order_id);
                 }
             }
+
 
 
             // Tentative 2 : trouver la commande directement par sa référence locale
