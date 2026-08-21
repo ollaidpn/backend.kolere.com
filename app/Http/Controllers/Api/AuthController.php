@@ -614,4 +614,176 @@ class AuthController extends Controller
             return response()->json(['message' => 'Erreur lors de la réinitialisation du mot de passe'], 500);
         }
     }
+
+    public function requestPhoneOtp(Request $request): JsonResponse
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'ccphone' => 'required|string',
+                'phone' => 'required|string|min:9|max:9',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'message' => 'Le numéro de téléphone doit comporter exactement 9 chiffres.',
+                    'errors' => $validator->errors(),
+                ], 422);
+            }
+
+            $ccphone = trim((string) $request->input('ccphone', '+221'));
+            $rawPhone = trim((string) $request->input('phone'));
+            $fullPhone = $ccphone . preg_replace('/^\+221/', '', $rawPhone);
+            $cleanDigits = preg_replace('/\D/', '', $rawPhone);
+
+            // Vérifier existence dans Manager & User
+            $hasManager = Manager::where('phone', 'LIKE', "%{$cleanDigits}")
+                ->orWhere('phone', $fullPhone)
+                ->exists();
+
+            $hasUser = User::where('phone', 'LIKE', "%{$cleanDigits}")
+                ->orWhere('phone', $fullPhone)
+                ->exists();
+
+            if (!$hasManager && !$hasUser) {
+                return response()->json(['message' => 'Aucun compte associé à ce numéro de téléphone.'], 404);
+            }
+
+            $otp = (string) random_int(100000, 999999);
+            $cacheKey = 'phone_login_otp:' . $cleanDigits;
+
+            Cache::put($cacheKey, [
+                'ccphone' => $ccphone,
+                'phone' => $rawPhone,
+                'full_phone' => $fullPhone,
+                'otp' => $otp,
+                'has_manager' => $hasManager,
+                'has_user' => $hasUser,
+            ], now()->addMinutes(10));
+
+            // Envoi SMS via Diotko
+            try {
+                $pubKey = env('DIOTKO_SMS_PUBLIC_KEY');
+                $secKey = env('DIOTKO_SMS_SECRET_KEY');
+                if ($pubKey && $secKey) {
+                    $smsService = new \App\Services\NotificationsService($pubKey, $secKey);
+                    $smsService->sendSmsNow([$fullPhone], "Votre code de connexion Kolere est : {$otp}");
+                }
+            } catch (\Throwable $sErr) {
+                Log::warning('[AuthController@requestPhoneOtp] SMS fail', ['error' => $sErr->getMessage()]);
+            }
+
+            return response()->json([
+                'message' => 'Code OTP envoyé par SMS',
+                'otp_debug' => config('app.debug') ? $otp : null,
+            ]);
+        } catch (\Exception $e) {
+            Log::error('[AuthController@requestPhoneOtp] Error', ['message' => $e->getMessage()]);
+            return response()->json(['message' => 'Erreur lors de l\'envoi du code OTP'], 500);
+        }
+    }
+
+    public function verifyPhoneOtp(Request $request): JsonResponse
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'phone' => 'required|string',
+                'otp' => 'required|string|size:6',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json(['message' => 'Code OTP invalide'], 422);
+            }
+
+            $rawPhone = trim((string) $request->input('phone'));
+            $cleanDigits = preg_replace('/\D/', '', $rawPhone);
+            $cacheKey = 'phone_login_otp:' . $cleanDigits;
+
+            $pending = Cache::get($cacheKey);
+            if (!$pending || !hash_equals((string) ($pending['otp'] ?? ''), (string) $request->input('otp'))) {
+                return response()->json(['message' => 'Code OTP invalide ou expiré'], 400);
+            }
+
+            $hasManager = (bool) ($pending['has_manager'] ?? false);
+            $hasUser = (bool) ($pending['has_user'] ?? false);
+
+            if ($hasManager && $hasUser) {
+                return response()->json([
+                    'status' => 'multiple_accounts',
+                    'message' => 'Votre numéro est lié à un compte Espace Backoffice (Gestionnaire) et un compte Espace Client.',
+                    'accounts' => [
+                        ['role' => 'manager', 'title' => 'Espace Backoffice', 'description' => 'Gérer votre boutique, clients et ventes'],
+                        ['role' => 'client', 'title' => 'Espace Client', 'description' => 'Consulter vos points et carte de fidélité'],
+                    ],
+                ]);
+            }
+
+            $selectedRole = $hasManager ? 'manager' : 'client';
+            return $this->authenticatePhoneUser($cleanDigits, $pending['full_phone'], $selectedRole);
+        } catch (\Exception $e) {
+            Log::error('[AuthController@verifyPhoneOtp] Error', ['message' => $e->getMessage()]);
+            return response()->json(['message' => 'Erreur de vérification OTP'], 500);
+        }
+    }
+
+    public function selectPhoneAccount(Request $request): JsonResponse
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'phone' => 'required|string',
+                'role' => 'required|in:manager,client',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json(['message' => 'Sélection invalide'], 422);
+            }
+
+            $rawPhone = trim((string) $request->input('phone'));
+            $cleanDigits = preg_replace('/\D/', '', $rawPhone);
+            $selectedRole = $request->input('role');
+            $fullPhone = '+221' . $cleanDigits;
+
+            return $this->authenticatePhoneUser($cleanDigits, $fullPhone, $selectedRole);
+        } catch (\Exception $e) {
+            Log::error('[AuthController@selectPhoneAccount] Error', ['message' => $e->getMessage()]);
+            return response()->json(['message' => 'Erreur lors de la sélection de l\'espace'], 500);
+        }
+    }
+
+    private function authenticatePhoneUser(string $cleanDigits, string $fullPhone, string $role): JsonResponse
+    {
+        if ($role === 'manager') {
+            $manager = Manager::where('phone', 'LIKE', "%{$cleanDigits}")
+                ->orWhere('phone', $fullPhone)
+                ->first();
+
+            if (!$manager) {
+                return response()->json(['message' => 'Compte Backoffice non trouvé.'], 404);
+            }
+
+            $token = $manager->createToken('manager-token')->plainTextToken;
+            return response()->json([
+                'status' => 'authenticated',
+                'token' => $token,
+                'user' => $manager->makeHidden(['password']),
+                'role' => 'manager',
+            ]);
+        }
+
+        $user = User::where('phone', 'LIKE', "%{$cleanDigits}")
+            ->orWhere('phone', $fullPhone)
+            ->first();
+
+        if (!$user) {
+            return response()->json(['message' => 'Compte Client non trouvé.'], 404);
+        }
+
+        $token = $user->createToken('client-token')->plainTextToken;
+        return response()->json([
+            'status' => 'authenticated',
+            'token' => $token,
+            'user' => $user->makeHidden(['password']),
+            'role' => 'client',
+        ]);
+    }
 }
+
