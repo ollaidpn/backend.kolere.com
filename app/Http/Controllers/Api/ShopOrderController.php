@@ -362,13 +362,14 @@ class ShopOrderController extends Controller
                         'error_url' => $statusUrl,
                         'success_url' => $statusUrl,
                         'extra_data' => [
+                            'order_reference' => (string) $order->reference,
                             'origin' => 'kolere-shop',
                             'entity_id' => $entityId,
-                            'order_reference' => $order->reference,
-                            'payment_reference' => $paymentReference,
-                            'payment_log_reference' => $paymentLog->reference,
+                            'payment_reference' => (string) $paymentReference,
+                            'payment_log_reference' => (string) $paymentLog->reference,
                         ],
                     ]);
+
 
                 } catch (\Throwable $e) {
                     $paymentLog->update([
