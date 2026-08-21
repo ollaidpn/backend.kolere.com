@@ -81,12 +81,26 @@ class NotificationsService
                 ])
                 ->get($packagesUrl);
 
-            return $response->json() ?? ['success' => false];
+            $data = $response->json() ?? [];
+            if ($response->successful()) {
+                $packages = $data['packages'] ?? $data['data']['packages'] ?? $data['data'] ?? [];
+                $providers = $data['payment_providers'] ?? $data['data']['payment_providers'] ?? [];
+
+                return [
+                    'success' => true,
+                    'packages' => $packages,
+                    'payment_providers' => $providers,
+                    'raw' => $data,
+                ];
+            }
+
+            return ['success' => false, 'message' => $data['message'] ?? 'Erreur lors de la récupération des packages'];
         } catch (\Exception $e) {
             Log::error('NotificationsService: Diotko listPackages failed', ['error' => $e->getMessage()]);
             return ['success' => false, 'message' => 'Erreur technique lors de la récupération des packages'];
         }
     }
+
 
     /**
      * Acheter un package SMS (`POST /api/v1/packages/buy`)

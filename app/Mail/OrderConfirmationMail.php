@@ -6,6 +6,7 @@ use App\Models\Entity;
 use App\Models\ShopOrder;
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
+use Illuminate\Mail\Mailables\Address;
 use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
@@ -29,6 +30,8 @@ class OrderConfirmationMail extends Mailable
     {
         $storeName = $this->entity->name ?: 'Boutique';
         $clientName = data_get($this->order->client_infos, 'name') ?: 'Client';
+        $fromAddress = $this->entity->email ?: config('mail.from.address');
+        $fromName = $this->entity->name ?: config('mail.from.name');
 
         if ($this->recipientType === 'admin') {
             $subject = "Nouvelle commande de : {$clientName} | {$storeName}";
@@ -37,6 +40,7 @@ class OrderConfirmationMail extends Mailable
         }
 
         return new Envelope(
+            from: new Address($fromAddress, $fromName),
             subject: $subject,
         );
     }

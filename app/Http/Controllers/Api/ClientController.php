@@ -8,6 +8,7 @@ use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use App\Http\Controllers\Controller;
 use App\Services\FileUploadService;
+use App\Services\ShopMailFromResolver;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
@@ -171,11 +172,11 @@ class ClientController extends Controller
                         . "Téléchargez l'application mobile {$shopName} pour suivre vos points et profiter de vos cadeaux !\n\n"
                         . "À très bientôt,\nL'équipe {$shopName}";
 
-                    \Illuminate\Support\Facades\Mail::raw($body, function ($msg) use ($client, $subject, $entity, $shopName) {
+                    \Illuminate\Support\Facades\Mail::raw($body, function ($msg) use ($client, $subject, $entity, $shopName, $request) {
                         $msg->to($client->email)->subject($subject);
-                        if ($entity && $entity->email) {
-                            $msg->from($entity->email, $shopName);
-                        }
+                        app(ShopMailFromResolver::class)->applyTo(function (string $address, string $name) use ($msg) {
+                            $msg->from($address, $name);
+                        }, $entity, $request);
                     });
                 } catch (\Throwable $mErr) {
                     Log::error('[ClientController@store] Échec envoi email de bienvenue', ['error' => $mErr->getMessage()]);

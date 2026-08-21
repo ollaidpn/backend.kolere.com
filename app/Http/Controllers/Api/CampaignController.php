@@ -8,6 +8,7 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use App\Http\Controllers\Controller;
+use App\Services\ShopMailFromResolver;
 use Illuminate\Support\Carbon;
 
 class CampaignController extends Controller
@@ -339,9 +340,9 @@ class CampaignController extends Controller
                         \Illuminate\Support\Facades\Mail::raw($campaign->message, function ($msg) use ($recipient, $campaign, $entity) {
                             $msg->to($recipient['email'])
                                 ->subject($campaign->title);
-                            if ($entity && $entity->email) {
-                                $msg->from($entity->email, $entity->name);
-                            }
+                            app(ShopMailFromResolver::class)->applyTo(function (string $address, string $name) use ($msg) {
+                                $msg->from($address, $name);
+                            }, $entity, request());
                         });
                         $recipients[$idx]['status'] = 'success';
                         $recipients[$idx]['sent_at'] = now()->toDateTimeString();
