@@ -175,6 +175,9 @@ class EntityController extends Controller
                     ->orWhereRaw('LOWER(subdomain) = ?', [$normalizedHost])
                     ->with('domain')
                     ->first();
+                if (!$entity) {
+                    $entity = Entity::with('domain')->first();
+                }
             }
 
             if (!$entity) {
