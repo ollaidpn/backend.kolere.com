@@ -11,7 +11,7 @@ class Link extends Model
     use HasFactory;
     use Searchable;
 
-    protected $fillable = ['manager_id', 'entity_id', 'role_id', 'is_admin'];
+    protected $fillable = ['manager_id', 'entity_id', 'is_admin'];
 
     protected $casts = [
         'is_admin' => 'boolean',
@@ -27,10 +27,5 @@ class Link extends Model
     public function entity()
     {
         return $this->belongsTo(Entity::class);
-    }
-
-    public function role()
-    {
-        return $this->belongsTo(Role::class);
     }
 }

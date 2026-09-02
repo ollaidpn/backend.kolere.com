@@ -4,11 +4,11 @@ namespace App\Http\Controllers\Api;
 
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
-use App\Models\Role;
+use Spatie\Permission\Models\Role;
 use App\Http\Resources\RoleResource;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\RoleCollection;
-use App\Models\Permission;
+use Spatie\Permission\Models\Permission;
 
 class RoleController extends Controller
 {

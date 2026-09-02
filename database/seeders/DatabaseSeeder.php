@@ -21,7 +21,6 @@ use App\Models\AlertApp;
 use App\Models\AlertMessage;
 use App\Models\ShopCategory;
 use App\Models\ShopBrand;
-use App\Models\Role;
 
 class DatabaseSeeder extends Seeder
 {
@@ -35,8 +34,7 @@ class DatabaseSeeder extends Seeder
         $tables = [
             'alert_messages', 'alert_apps', 'card_credits', 'discounts',
             'orders', 'cards', 'card_types', 'links', 'managers', 'users',
-            'entities', 'domains', 'invitations', 'notification_reads', 'notifications', 'terms',
-            'role_permissions', 'permissions', 'roles',
+            'entities', 'domains', 'invitations', 'terms',
         ];
 
         foreach ($tables as $table) {
@@ -65,8 +63,6 @@ class DatabaseSeeder extends Seeder
                 ]
             );
 
-            $this->call(PermissionsSeeder::class);
-
             // ╔══════════════════════════════════════╗
             // ║  1. DOMAINS                          ║
             // ╚══════════════════════════════════════╝
@@ -84,15 +80,6 @@ class DatabaseSeeder extends Seeder
                 'website_status'  => 'active',
                 'primary_color'   => '#0D9488',
                 'secondary_color' => '#F0FDFA',
-                'web_slider'      => [
-                    [
-                        'title' => 'Votre santé, notre priorité',
-                        'subtitle' => 'Commandez vos essentiels en quelques clics.',
-                        'btn' => 'Découvrir',
-                        'link' => '/',
-                        'image' => 'https://images.unsplash.com/photo-1587854692152-cbe660dbde88?auto=format&fit=crop&w=1200&q=80',
-                    ],
-                ],
                 'address'         => '12 Rue Carnot',
                 'town'            => 'Dakar',
                 'country'         => 'Sénégal',
@@ -114,12 +101,7 @@ class DatabaseSeeder extends Seeder
                 'reference' => 'MA-001',
             ]);
 
-            Link::create([
-                'manager_id' => $manager->id,
-                'entity_id' => $pharmacie->id,
-                'is_admin' => true,
-                'role_id' => null,
-            ]);
+            Link::create(['manager_id' => $manager->id, 'entity_id' => $pharmacie->id, 'is_admin' => true]);
 
             // ╔══════════════════════════════════════╗
             // ║  4. USERS (Clients)                   ║

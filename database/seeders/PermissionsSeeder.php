@@ -2,138 +2,148 @@
 
 namespace Database\Seeders;
 
-use App\Models\Permission;
-use App\Models\Role;
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Arr;
-use Illuminate\Support\Facades\DB;
+use Spatie\Permission\Models\Role;
+use Spatie\Permission\Models\Permission;
+use Spatie\Permission\PermissionRegistrar;
 
 class PermissionsSeeder extends Seeder
 {
     public function run(): void
     {
-        $config = config('rbac');
-        $modules = $config['modules'] ?? [];
-        $defaultRoles = $config['default_roles'] ?? [];
+        // Reset cached roles and permissions
+        app()[PermissionRegistrar::class]->forgetCachedPermissions();
 
-        DB::transaction(function () use ($modules, $defaultRoles) {
-            $permissionsBySlug = [];
+        // Create default permissions
+        Permission::create(['name' => 'list admins']);
+        Permission::create(['name' => 'view admins']);
+        Permission::create(['name' => 'create admins']);
+        Permission::create(['name' => 'update admins']);
+        Permission::create(['name' => 'delete admins']);
 
-            foreach ($modules as $moduleKey => $module) {
-                foreach ($module['permissions'] ?? [] as $permissionDef) {
-                    $slug = "backoffice.{$moduleKey}.{$permissionDef['action']}";
+        Permission::create(['name' => 'list alertapps']);
+        Permission::create(['name' => 'view alertapps']);
+        Permission::create(['name' => 'create alertapps']);
+        Permission::create(['name' => 'update alertapps']);
+        Permission::create(['name' => 'delete alertapps']);
 
-                    $permission = Permission::updateOrCreate(
-                        ['slug' => $slug],
-                        [
-                            'user_type' => 'shop',
-                            'module' => $moduleKey,
-                            'action' => $permissionDef['action'],
-                            'label' => $permissionDef['label'],
-                            'description' => $permissionDef['description'] ?? null,
-                            'is_system' => true,
-                        ]
-                    );
+        Permission::create(['name' => 'list alertmessages']);
+        Permission::create(['name' => 'view alertmessages']);
+        Permission::create(['name' => 'create alertmessages']);
+        Permission::create(['name' => 'update alertmessages']);
+        Permission::create(['name' => 'delete alertmessages']);
 
-                    $permissionsBySlug[$slug] = $permission;
-                }
-            }
+        Permission::create(['name' => 'list apporders']);
+        Permission::create(['name' => 'view apporders']);
+        Permission::create(['name' => 'create apporders']);
+        Permission::create(['name' => 'update apporders']);
+        Permission::create(['name' => 'delete apporders']);
 
-            foreach ($defaultRoles as $roleDef) {
-                $role = Role::updateOrCreate(
-                    [
-                        'slug' => $roleDef['slug'],
-                        'entity_id' => null,
-                        'user_type' => $roleDef['user_type'],
-                    ],
-                    [
-                        'name' => $roleDef['name'],
-                        'description' => $roleDef['description'] ?? null,
-                        'scope' => $roleDef['scope'] ?? 'global',
-                        'is_system' => $roleDef['is_system'] ?? true,
-                        'is_active' => true,
-                    ]
-                );
+        Permission::create(['name' => 'list apppayments']);
+        Permission::create(['name' => 'view apppayments']);
+        Permission::create(['name' => 'create apppayments']);
+        Permission::create(['name' => 'update apppayments']);
+        Permission::create(['name' => 'delete apppayments']);
 
-                $permissionIds = [];
+        Permission::create(['name' => 'list appsuscriptions']);
+        Permission::create(['name' => 'view appsuscriptions']);
+        Permission::create(['name' => 'create appsuscriptions']);
+        Permission::create(['name' => 'update appsuscriptions']);
+        Permission::create(['name' => 'delete appsuscriptions']);
 
-                if ($roleDef['slug'] === 'super_admin') {
-                    $permissionIds = Permission::pluck('id')->all();
-                } elseif ($roleDef['slug'] === 'boutique_manager') {
-                    $permissionIds = Permission::pluck('id')->all();
-                } elseif ($roleDef['slug'] === 'caissier') {
-                    $permissionIds = Permission::whereIn('slug', [
-                        'backoffice.dashboard.read',
-                        'backoffice.stats.read',
-                        'backoffice.clients.read',
-                        'backoffice.cards.read',
-                        'backoffice.sales.read',
-                        'backoffice.notifications.read',
-                    ])->pluck('id')->all();
-                } elseif ($roleDef['slug'] === 'catalogue_manager') {
-                    $permissionIds = Permission::whereIn('slug', [
-                        'backoffice.dashboard.read',
-                        'backoffice.stats.read',
-                        'backoffice.shop.items.read',
-                        'backoffice.shop.items.view_details',
-                        'backoffice.shop.items.create',
-                        'backoffice.shop.items.update',
-                        'backoffice.shop.items.delete',
-                        'backoffice.shop.items.publish',
-                        'backoffice.shop.items.archive',
-                        'backoffice.shop.categories.read',
-                        'backoffice.shop.categories.create',
-                        'backoffice.shop.categories.update',
-                        'backoffice.shop.categories.delete',
-                        'backoffice.shop.brands.read',
-                        'backoffice.shop.brands.create',
-                        'backoffice.shop.brands.update',
-                        'backoffice.shop.brands.delete',
-                        'backoffice.shop.promo_codes.read',
-                        'backoffice.shop.promo_codes.create',
-                        'backoffice.shop.promo_codes.update',
-                        'backoffice.shop.promo_codes.delete',
-                        'backoffice.shop.promo_codes.activate',
-                        'backoffice.shop.promo_codes.deactivate',
-                        'backoffice.shop.orders.read',
-                        'backoffice.shop.orders.view_details',
-                    ])->pluck('id')->all();
-                } elseif ($roleDef['slug'] === 'support_marketing') {
-                    $permissionIds = Permission::whereIn('slug', [
-                        'backoffice.dashboard.read',
-                        'backoffice.stats.read',
-                        'backoffice.notifications.read',
-                        'backoffice.notifications.create',
-                        'backoffice.notifications.update',
-                        'backoffice.notifications.delete',
-                        'backoffice.notifications.send',
-                        'backoffice.notifications.mark_read',
-                        'backoffice.notifications.archive',
-                        'backoffice.demandes.read',
-                        'backoffice.demandes.view_details',
-                        'backoffice.demandes.update',
-                        'backoffice.demandes.delete',
-                        'backoffice.demandes.approve',
-                        'backoffice.demandes.reject',
-                        'backoffice.conversions.read',
-                        'backoffice.conversions.create',
-                        'backoffice.conversions.update',
-                        'backoffice.conversions.delete',
-                        'backoffice.conversions.approve',
-                        'backoffice.conversions.reject',
-                        'backoffice.rewards.read',
-                        'backoffice.rewards.create',
-                        'backoffice.rewards.update',
-                        'backoffice.rewards.delete',
-                        'backoffice.rewards.activate',
-                        'backoffice.rewards.deactivate',
-                    ])->pluck('id')->all();
-                } elseif ($roleDef['slug'] === 'lecture_seule') {
-                    $permissionIds = Permission::where('action', 'read')->pluck('id')->all();
-                }
+        Permission::create(['name' => 'list cards']);
+        Permission::create(['name' => 'view cards']);
+        Permission::create(['name' => 'create cards']);
+        Permission::create(['name' => 'update cards']);
+        Permission::create(['name' => 'delete cards']);
 
-                $role->permissions()->sync($permissionIds);
-            }
-        });
+        Permission::create(['name' => 'list cardcredits']);
+        Permission::create(['name' => 'view cardcredits']);
+        Permission::create(['name' => 'create cardcredits']);
+        Permission::create(['name' => 'update cardcredits']);
+        Permission::create(['name' => 'delete cardcredits']);
+
+        Permission::create(['name' => 'list cardtypes']);
+        Permission::create(['name' => 'view cardtypes']);
+        Permission::create(['name' => 'create cardtypes']);
+        Permission::create(['name' => 'update cardtypes']);
+        Permission::create(['name' => 'delete cardtypes']);
+
+        Permission::create(['name' => 'list discounts']);
+        Permission::create(['name' => 'view discounts']);
+        Permission::create(['name' => 'create discounts']);
+        Permission::create(['name' => 'update discounts']);
+        Permission::create(['name' => 'delete discounts']);
+
+        Permission::create(['name' => 'list domains']);
+        Permission::create(['name' => 'view domains']);
+        Permission::create(['name' => 'create domains']);
+        Permission::create(['name' => 'update domains']);
+        Permission::create(['name' => 'delete domains']);
+
+        Permission::create(['name' => 'list entities']);
+        Permission::create(['name' => 'view entities']);
+        Permission::create(['name' => 'create entities']);
+        Permission::create(['name' => 'update entities']);
+        Permission::create(['name' => 'delete entities']);
+
+        Permission::create(['name' => 'list links']);
+        Permission::create(['name' => 'view links']);
+        Permission::create(['name' => 'create links']);
+        Permission::create(['name' => 'update links']);
+        Permission::create(['name' => 'delete links']);
+
+        Permission::create(['name' => 'list managers']);
+        Permission::create(['name' => 'view managers']);
+        Permission::create(['name' => 'create managers']);
+        Permission::create(['name' => 'update managers']);
+        Permission::create(['name' => 'delete managers']);
+
+        Permission::create(['name' => 'list orders']);
+        Permission::create(['name' => 'view orders']);
+        Permission::create(['name' => 'create orders']);
+        Permission::create(['name' => 'update orders']);
+        Permission::create(['name' => 'delete orders']);
+
+        Permission::create(['name' => 'list pricings']);
+        Permission::create(['name' => 'view pricings']);
+        Permission::create(['name' => 'create pricings']);
+        Permission::create(['name' => 'update pricings']);
+        Permission::create(['name' => 'delete pricings']);
+
+        // Create user role and assign existing permissions
+        $currentPermissions = Permission::all();
+        $userRole = Role::create(['name' => 'user']);
+        $userRole->givePermissionTo($currentPermissions);
+
+        // Create admin exclusive permissions
+        Permission::create(['name' => 'list roles']);
+        Permission::create(['name' => 'view roles']);
+        Permission::create(['name' => 'create roles']);
+        Permission::create(['name' => 'update roles']);
+        Permission::create(['name' => 'delete roles']);
+
+        Permission::create(['name' => 'list permissions']);
+        Permission::create(['name' => 'view permissions']);
+        Permission::create(['name' => 'create permissions']);
+        Permission::create(['name' => 'update permissions']);
+        Permission::create(['name' => 'delete permissions']);
+
+        Permission::create(['name' => 'list users']);
+        Permission::create(['name' => 'view users']);
+        Permission::create(['name' => 'create users']);
+        Permission::create(['name' => 'update users']);
+        Permission::create(['name' => 'delete users']);
+
+        // Create admin role and assign all permissions
+        $allPermissions = Permission::all();
+        $adminRole = Role::create(['name' => 'super-admin']);
+        $adminRole->givePermissionTo($allPermissions);
+
+        $user = \App\Models\User::whereEmail('admin@admin.com')->first();
+
+        if ($user) {
+            $user->assignRole($adminRole);
+        }
     }
 }

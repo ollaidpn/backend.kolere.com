@@ -21,8 +21,6 @@ class ShopPayment extends Model
         'amount',
         'method',
         'paid_by',
-        'status',
-        'gateway_reference',
     ];
 
     protected $casts = [

@@ -84,31 +84,11 @@ class ShopItemController extends Controller
                 'promo_price' => 'nullable|numeric|min:0|lte:price',
                 'stock' => 'nullable|integer|min:0',
                 'description' => 'nullable|string|max:5000',
-                'image' => 'nullable|file|mimes:jpg,jpeg,png,webp,svg|max:2048',
+                'image' => 'nullable|string|max:2048',
                 'gallery' => 'nullable|array',
-                'gallery.*' => 'nullable|file|mimes:jpg,jpeg,png,webp,svg|max:5120',
+                'gallery.*' => 'nullable|string|max:2048',
                 'status' => 'required|in:active,draft,archived',
             ]);
-
-            $fileService = new \App\Services\FileUploadService();
-            
-            // Image principale
-            $imagePath = null;
-            if ($request->hasFile('image')) {
-                $uploaded = $fileService->upload($request->file('image'), 'shop-items');
-                $imagePath = $uploaded['url'];
-            }
-
-            // Galerie d'images
-            $galleryPaths = [];
-            if ($request->hasFile('gallery')) {
-                foreach ($request->file('gallery') as $galleryFile) {
-                    if ($galleryFile->isValid()) {
-                        $uploaded = $fileService->upload($galleryFile, 'shop-items/gallery');
-                        $galleryPaths[] = $uploaded['url'];
-                    }
-                }
-            }
 
             $item = ShopItem::create([
                 'entity_id' => $entityId,
@@ -120,8 +100,8 @@ class ShopItemController extends Controller
                 'promo_price' => $validated['promo_price'] ?? null,
                 'stock' => $validated['stock'] ?? 0,
                 'description' => $validated['description'] ?? null,
-                'image' => $imagePath,
-                'gallery' => $galleryPaths,
+                'image' => $validated['image'] ?? null,
+                'gallery' => $validated['gallery'] ?? [],
                 'status' => $validated['status'],
             ]);
 
@@ -153,16 +133,13 @@ class ShopItemController extends Controller
                 'promo_price' => 'nullable|numeric|min:0|lte:price',
                 'stock' => 'nullable|integer|min:0',
                 'description' => 'nullable|string|max:5000',
-                'image' => 'nullable|file|mimes:jpg,jpeg,png,webp,svg|max:2048',
+                'image' => 'nullable|string|max:2048',
                 'gallery' => 'nullable|array',
-                'gallery.*' => 'nullable|file|mimes:jpg,jpeg,png,webp,svg|max:5120',
+                'gallery.*' => 'nullable|string|max:2048',
                 'status' => 'required|in:active,draft,archived',
-                'keep_gallery' => 'nullable|string', // Liste JSON des images de la galerie existante à garder
             ]);
 
-            $fileService = new \App\Services\FileUploadService();
-
-            $data = [
+            $item->update([
                 'category_id' => $validated['category_id'],
                 'brand_id' => $validated['brand_id'] ?? null,
                 'reference' => $validated['reference'] ?? $item->reference,
@@ -171,52 +148,10 @@ class ShopItemController extends Controller
                 'promo_price' => $validated['promo_price'] ?? null,
                 'stock' => $validated['stock'] ?? 0,
                 'description' => $validated['description'] ?? null,
+                'image' => $validated['image'] ?? null,
+                'gallery' => $validated['gallery'] ?? [],
                 'status' => $validated['status'],
-            ];
-
-            // Remplacement image principale
-            if ($request->hasFile('image')) {
-                if ($item->image && !str_starts_with($item->image, 'http')) {
-                    $fileService->delete($item->image);
-                } elseif ($item->image && str_contains($item->image, 'esargal.com')) {
-                    $path = explode('esargal.com/', $item->image)[1] ?? null;
-                    if ($path) $fileService->delete($path);
-                }
-                $uploaded = $fileService->upload($request->file('image'), 'shop-items');
-                $data['image'] = $uploaded['url'];
-            }
-
-            // Gestion de la galerie d'images
-            $keepGallery = [];
-            if ($request->filled('keep_gallery')) {
-                $keepGallery = json_decode($request->input('keep_gallery'), true) ?: [];
-            }
-
-            // Supprimer les images de la galerie sur S3 qui n'ont pas été gardées
-            $oldGallery = $item->gallery ?: [];
-            foreach ($oldGallery as $oldImg) {
-                if (!in_array($oldImg, $keepGallery)) {
-                    if ($oldImg && !str_starts_with($oldImg, 'http')) {
-                        $fileService->delete($oldImg);
-                    } elseif ($oldImg && str_contains($oldImg, 'esargal.com')) {
-                        $path = explode('esargal.com/', $oldImg)[1] ?? null;
-                        if ($path) $fileService->delete($path);
-                    }
-                }
-            }
-
-            $galleryPaths = $keepGallery;
-            if ($request->hasFile('gallery')) {
-                foreach ($request->file('gallery') as $galleryFile) {
-                    if ($galleryFile->isValid()) {
-                        $uploaded = $fileService->upload($galleryFile, 'shop-items/gallery');
-                        $galleryPaths[] = $uploaded['url'];
-                    }
-                }
-            }
-            $data['gallery'] = $galleryPaths;
-
-            $item->update($data);
+            ]);
 
             return response()->json([
                 'message' => 'Article mis à jour',
@@ -229,6 +164,7 @@ class ShopItemController extends Controller
             return response()->json(['message' => 'Erreur lors de la mise à jour de l\'article'], 500);
         }
     }
+
     public function destroy(Request $request, ShopItem $item): JsonResponse
     {
         try {
@@ -236,16 +172,6 @@ class ShopItemController extends Controller
                 abort_unless((int) $item->entity_id === (int) $entityId, 404);
             }
 
-            $fileService = new \App\Services\FileUploadService();
-            if ($item->image && !str_starts_with($item->image, 'http')) {
-                $fileService->delete($item->image);
-            }
-            $gallery = $item->gallery ?: [];
-            foreach ($gallery as $img) {
-                if ($img && !str_starts_with($img, 'http')) {
-                    $fileService->delete($img);
-                }
-            }
             $item->delete();
 
             return response()->json(['message' => 'Article supprimé']);

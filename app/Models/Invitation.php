@@ -19,7 +19,6 @@ class Invitation extends Model
         'phone',
         'token',
         'status',
-        'invite_type',
         'is_admin',
     ];
 

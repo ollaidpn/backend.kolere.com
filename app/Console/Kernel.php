@@ -12,9 +12,8 @@ class Kernel extends ConsoleKernel
      */
     protected function schedule(Schedule $schedule): void
     {
-        $schedule->command('campaigns:process-scheduled')->everyMinute();
+        // $schedule->command('inspire')->hourly();
     }
-
 
     /**
      * Register the commands for the application.

@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Api;
 use App\Models\User;
 use App\Models\Order;
 use App\Models\Card;
-use App\Models\CardCredit;
 use App\Models\Discount;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
@@ -172,71 +171,7 @@ class BackofficeDashboardController extends Controller
         }
     }
 
-    public function getManagerStats(Request $request): JsonResponse
-    {
-        try {
-            $entityId = $this->entityId($request);
-            if (!$entityId) {
-                return response()->json(['data' => []]);
-            }
-
-            // Récupérer tous les managers associés à l'entité active
-            $managers = DB::table('managers')
-                ->join('links', 'managers.id', '=', 'links.manager_id')
-                ->where('links.entity_id', $entityId)
-                ->select('managers.id', 'managers.name', 'managers.email', 'managers.phone', 'managers.reference', 'links.is_admin')
-                ->get();
-
-            $managerStats = [];
-
-            foreach ($managers as $manager) {
-                // Ventes effectuées par ce manager (sur les cartes de fidélité)
-                $salesQuery = Order::where('entity_id', $entityId)->where('manager_id', $manager->id);
-                $totalSalesAmount = (float) (clone $salesQuery)->sum('amount');
-                $totalSalesCount = (clone $salesQuery)->count();
-                $pointsEarned = (int) (clone $salesQuery)->sum('points_earned');
-
-                // Ventes ce mois-ci
-                $salesThisMonthAmount = (float) (clone $salesQuery)->where('created_at', '>=', now()->startOfMonth())->sum('amount');
-                $salesThisMonthCount = (clone $salesQuery)->where('created_at', '>=', now()->startOfMonth())->count();
-
-                // Conversions (échanges de points contre récompenses) effectuées par ce manager
-                $conversionsQuery = CardCredit::where('entity_id', $entityId)
-                    ->where('manager_id', $manager->id)
-                    ->where('type', 'redeemed');
-
-                $totalConversionsCount = (clone $conversionsQuery)->count();
-                $totalPointsConverted = abs((int) (clone $conversionsQuery)->sum('credit'));
-
-                $managerStats[] = [
-                    'manager_id' => $manager->id,
-                    'name' => $manager->name,
-                    'email' => $manager->email,
-                    'phone' => $manager->phone,
-                    'reference' => $manager->reference,
-                    'is_admin' => (bool) $manager->is_admin,
-                    'total_sales_amount' => $totalSalesAmount,
-                    'total_sales_count' => $totalSalesCount,
-                    'sales_this_month_amount' => $salesThisMonthAmount,
-                    'sales_this_month_count' => $salesThisMonthCount,
-                    'points_earned' => $pointsEarned,
-                    'total_conversions_count' => $totalConversionsCount,
-                    'total_points_converted' => $totalPointsConverted,
-                ];
-            }
-
-            // Trier par chiffre d'affaires généré décroissant
-            usort($managerStats, fn ($a, $b) => $b['total_sales_amount'] <=> $a['total_sales_amount']);
-
-            return response()->json(['data' => $managerStats]);
-        } catch (\Exception $e) {
-            Log::error('[BackofficeDashboardController@getManagerStats] Error', ['message' => $e->getMessage()]);
-            return response()->json(['message' => 'Erreur statistiques vendeurs: ' . $e->getMessage()], 500);
-        }
-    }
-
     public function getQuickStats(Request $request): JsonResponse
-
     {
         $entityId = $this->entityId($request);
         $today = Carbon::today();

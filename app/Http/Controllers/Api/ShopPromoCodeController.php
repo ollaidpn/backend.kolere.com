@@ -43,64 +43,7 @@ class ShopPromoCodeController extends Controller
         }
     }
 
-    public function checkPublic(Request $request): JsonResponse
-    {
-        try {
-            $entityId = $this->currentEntityId($request);
-            if (!$entityId) {
-                return response()->json(['message' => 'Entité introuvable'], 400);
-            }
-
-            $validated = $request->validate([
-                'code' => 'required|string',
-                'subtotal' => 'nullable|numeric|min:0',
-            ]);
-
-            $codeStr = strtoupper(trim($validated['code']));
-            $promoCode = ShopPromoCode::where('entity_id', $entityId)
-                ->where('code', $codeStr)
-                ->first();
-
-            if (!$promoCode) {
-                return response()->json(['message' => 'Code promo invalide.'], 404);
-            }
-
-            if ($promoCode->status !== 'active') {
-                return response()->json(['message' => 'Ce code promo n\'est plus actif.'], 400);
-            }
-
-            if ($promoCode->valid_until && now()->gt($promoCode->valid_until)) {
-                return response()->json(['message' => 'Ce code promo a expiré.'], 400);
-            }
-
-            if ($promoCode->max_uses > 0 && $promoCode->uses >= $promoCode->max_uses) {
-                return response()->json(['message' => 'Ce code promo a atteint la limite d\'utilisations.'], 400);
-            }
-
-            $subtotal = (float) ($validated['subtotal'] ?? 0);
-            if ($promoCode->min_amount > 0 && $subtotal < $promoCode->min_amount) {
-                return response()->json(['message' => "Le montant minimum pour ce code promo est de {$promoCode->min_amount} FCFA."], 400);
-            }
-
-            return response()->json([
-                'message' => 'Code promo appliqué avec succès',
-                'data' => [
-                    'code' => $promoCode->code,
-                    'type' => $promoCode->type,
-                    'value' => (float) $promoCode->value,
-                    'min_amount' => (float) $promoCode->min_amount,
-                ],
-            ]);
-        } catch (ValidationException $e) {
-            throw $e;
-        } catch (\Exception $e) {
-            Log::error('[ShopPromoCodeController@checkPublic] Error', ['message' => $e->getMessage()]);
-            return response()->json(['message' => 'Erreur lors de la vérification du code promo'], 500);
-        }
-    }
-
     public function store(Request $request): JsonResponse
-
     {
         try {
             $entityId = $this->currentEntityId($request);

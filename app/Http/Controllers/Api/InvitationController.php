@@ -10,96 +10,34 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
-use App\Services\ShopMailFromResolver;
 
 class InvitationController extends Controller
 {
     public function store(Request $request): JsonResponse
     {
-        $entityId = $request->attributes->get('current_entity_id') ?? $request->input('entity_id');
-        $inviteType = $request->input('invite_type', 'email');
-
-        Log::info('[InvitationController@store] Creating invitation', [
-            'email' => $request->email,
-            'invite_type' => $inviteType,
-            'entity_id' => $entityId,
-        ]);
+        Log::info('[InvitationController@store] Creating invitation', ['email' => $request->email]);
         try {
-            $request->merge(['entity_id' => $entityId, 'invite_type' => $inviteType]);
-
-            $rules = [
-                'entity_id'   => 'required|exists:entities,id',
-                'invite_type' => 'nullable|in:email,phone',
-                'name'        => 'required|string|max:255',
-                'ccphone'     => 'nullable|string|max:10',
-                'phone'       => 'nullable|string|max:20',
-                'is_admin'    => 'boolean',
-            ];
-
-            if ($inviteType === 'phone') {
-                $rules['email'] = 'nullable|email|max:255';
-                $rules['ccphone'] = 'required|string|max:10';
-                $rules['phone'] = 'required|string|max:20';
-            } else {
-                $rules['email'] = 'required|email|max:255';
-            }
-
-            $request->validate($rules);
-
-            $managerExists = $inviteType === 'phone'
-                ? Manager::where('ccphone', $request->input('ccphone'))
-                    ->where('phone', $request->input('phone'))
-                    ->exists()
-                : Manager::whereRaw('LOWER(email) = ?', [mb_strtolower(trim((string) $request->input('email')))])
-                    ->exists();
-
-            if ($managerExists) {
-                return response()->json([
-                    'message' => $inviteType === 'phone'
-                        ? 'Un manager avec ce numéro existe déjà.'
-                        : 'Un manager avec cet email existe déjà.',
-                ], 422);
-            }
-
-            $email = $inviteType === 'phone'
-                ? 'invite-' . Str::uuid()->toString() . '@kolere.local'
-                : mb_strtolower(trim((string) $request->input('email')));
+            $request->validate([
+                'entity_id' => 'required|exists:entities,id',
+                'email'     => 'required|email|max:255',
+                'name'      => 'required|string|max:255',
+                'ccphone'   => 'nullable|string|max:10',
+                'phone'     => 'nullable|string|max:20',
+                'is_admin'  => 'boolean',
+            ]);
 
             $invitation = Invitation::create([
                 'entity_id' => $request->input('entity_id'),
-                'email'     => $email,
+                'email'     => $request->input('email'),
                 'name'      => $request->input('name'),
                 'ccphone'   => $request->input('ccphone'),
                 'phone'     => $request->input('phone'),
                 'token'     => Str::uuid()->toString(),
                 'status'    => 'pending',
-                'invite_type' => $inviteType,
                 'is_admin'  => $request->input('is_admin', false),
             ]);
             Log::info('[InvitationController@store] Invitation created', ['invitation_id' => $invitation->id]);
-
-            if ($inviteType === 'email') {
-                $frontendBase = rtrim((string) ($request->headers->get('origin') ?: env('FRONTEND_URL', config('app.url'))), '/');
-                $inviteLink = $frontendBase . '/invitation/' . $invitation->token;
-
-                try {
-                    Mail::raw(
-                        "Bonjour {$invitation->name},\n\nVous avez été invité(e) à rejoindre votre espace manager.\n\nLien d'activation : {$inviteLink}\n\nCe lien permet de compléter votre inscription et activer votre compte.",
-                        function ($message) use ($invitation, $request) {
-                            $message->to($invitation->email)->subject("Invitation manager - {$invitation->name}");
-                            app(ShopMailFromResolver::class)->applyTo(function (string $address, string $name) use ($message) {
-                                $message->from($address, $name);
-                            }, null, $request);
-                        }
-                    );
-                } catch (\Throwable $mailError) {
-                    Log::warning('[InvitationController@store] Mail send failed', [
-                        'message' => $mailError->getMessage(),
-                    ]);
-                }
-            }
 
             return response()->json([
                 'message' => 'Invitation envoyée.',
@@ -137,39 +75,19 @@ class InvitationController extends Controller
                 ->where('status', 'pending')
                 ->firstOrFail();
 
-            $manager = $invitation->invite_type === 'phone'
-                ? Manager::where('ccphone', $invitation->ccphone)
-                    ->where('phone', $invitation->phone)
-                    ->first()
-                : Manager::whereRaw('LOWER(email) = ?', [mb_strtolower(trim((string) $invitation->email))])
-                    ->first();
+            $manager = Manager::where('email', $invitation->email)->first();
 
             if (!$manager) {
-                if (!$request->filled('password')) {
-                    return response()->json([
-                        'message' => 'Compte à créer.',
-                        'manager_existed' => false,
-                    ]);
-                }
-
-                $rules = [
-                    'password' => 'required|string|min:6',
+                $request->validate([
+                    'password' => 'required|string|min:1',
                     'name'     => 'nullable|string|max:255',
                     'phone'    => 'nullable|string|max:20',
                     'ccphone'  => 'nullable|string|max:10',
-                ];
-
-                if ($invitation->invite_type === 'phone') {
-                    $rules['email'] = 'required|email|max:255';
-                }
-
-                $request->validate($rules);
+                ]);
 
                 $manager = Manager::create([
                     'name'      => $request->input('name', $invitation->name),
-                    'email'     => $invitation->invite_type === 'phone'
-                        ? mb_strtolower(trim((string) $request->input('email')))
-                        : $invitation->email,
+                    'email'     => $invitation->email,
                     'ccphone'   => $request->input('ccphone', $invitation->ccphone),
                     'phone'     => $request->input('phone', $invitation->phone),
                     'password'  => Hash::make($request->input('password')),

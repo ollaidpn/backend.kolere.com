@@ -18,36 +18,18 @@ class Entity extends Model
         'website_status',
         'domain_id',
         'name',
-        'type',
         'logo',
         'primary_color',
         'secondary_color',
-        'web_slider',
         'address',
         'town',
         'country',
         'email',
         'ccphone',
         'phone',
-        'delivery_zones',
-        'diotko_public_key',
-        'diotko_secret_key',
-        'fayko_public_key',
-        'fayko_secret_key',
-        'fayko_webhook_key',
-        'fayko_mode',
     ];
-
-
-
-
 
     protected $searchableFields = ['*'];
-
-    protected $casts = [
-        'web_slider' => 'array',
-        'delivery_zones' => 'array',
-    ];
 
     public function alertApps()
     {

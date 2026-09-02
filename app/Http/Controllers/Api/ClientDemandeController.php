@@ -6,8 +6,8 @@ use App\Models\Demande;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use App\Http\Controllers\Controller;
-use App\Services\FileUploadService;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 
 class ClientDemandeController extends Controller
 {
@@ -18,11 +18,10 @@ class ClientDemandeController extends Controller
 
     private function formatDemande(Demande $d): array
     {
-        $fileService = new FileUploadService();
         return [
             'id'             => $d->id,
             'description'    => $d->description,
-            'photo_url'      => $d->photo ? (str_starts_with($d->photo, 'http') ? $d->photo : $fileService->getUrl($d->photo)) : null,
+            'photo_url'      => $d->photo ? url(Storage::url($d->photo)) : null,
             'status'         => $d->status,
             'manager_comment'=> $d->manager_comment,
             'manager_amount' => $d->manager_amount,
@@ -61,9 +60,7 @@ class ClientDemandeController extends Controller
 
             $photoPath = null;
             if ($request->hasFile('photo')) {
-                $fileService = new \App\Services\FileUploadService();
-                $uploaded = $fileService->upload($request->file('photo'), 'demandes');
-                $photoPath = $uploaded['path'];
+                $photoPath = $request->file('photo')->store('demandes', 'public');
             }
 
             if (!$validated['description'] && !$photoPath) {

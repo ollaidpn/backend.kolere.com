@@ -34,7 +34,9 @@ class ShopBrandController extends Controller
 
             $brands = $query->orderBy('name')->get();
             $brands = $brands->map(function ($brand) {
-                $brand->image_url = $brand->image;
+                $brand->image_url = $brand->image && !str_starts_with($brand->image, 'http')
+                    ? url(Storage::url($brand->image))
+                    : $brand->image;
                 return $brand;
             });
 
@@ -56,24 +58,19 @@ class ShopBrandController extends Controller
             $validated = $request->validate([
                 'reference' => 'nullable|string|max:255|unique:shop_brands,reference',
                 'name' => 'required|string|max:255',
-                'image' => 'nullable|file|mimes:jpg,jpeg,png,webp,svg|max:2048',
+                'image' => 'nullable|string|max:2048',
             ]);
-
-            $imagePath = null;
-            if ($request->hasFile('image')) {
-                $fileService = new \App\Services\FileUploadService();
-                $uploaded = $fileService->upload($request->file('image'), 'shop-brands');
-                $imagePath = $uploaded['url'];
-            }
 
             $brand = ShopBrand::create([
                 'entity_id' => $entityId,
                 'reference' => $validated['reference'] ?? null,
                 'name' => $validated['name'],
-                'image' => $imagePath,
+                'image' => $validated['image'] ?? null,
             ]);
 
-            $brand->image_url = $brand->image;
+            $brand->image_url = $brand->image && !str_starts_with($brand->image, 'http')
+                ? url(Storage::url($brand->image))
+                : $brand->image;
 
             return response()->json(['message' => 'Marque créée', 'data' => $brand], 201);
         } catch (ValidationException $e) {
@@ -94,30 +91,18 @@ class ShopBrandController extends Controller
             $validated = $request->validate([
                 'reference' => 'nullable|string|max:255|unique:shop_brands,reference,' . $brand->id,
                 'name' => 'required|string|max:255',
-                'image' => 'nullable|file|mimes:jpg,jpeg,png,webp,svg|max:2048',
+                'image' => 'nullable|string|max:2048',
             ]);
 
-            $data = [
+            $brand->update([
                 'reference' => $validated['reference'] ?? $brand->reference,
                 'name' => $validated['name'],
-            ];
+                'image' => $validated['image'] ?? null,
+            ]);
 
-            if ($request->hasFile('image')) {
-                $fileService = new \App\Services\FileUploadService();
-                // Extrait le chemin S3 relatif de l'URL absolue existante pour pouvoir la supprimer
-                if ($brand->image && !str_starts_with($brand->image, 'http')) {
-                    $fileService->delete($brand->image);
-                } elseif ($brand->image && str_contains($brand->image, 'esargal.com')) {
-                    $path = explode('esargal.com/', $brand->image)[1] ?? null;
-                    if ($path) $fileService->delete($path);
-                }
-                $uploaded = $fileService->upload($request->file('image'), 'shop-brands');
-                $data['image'] = $uploaded['url'];
-            }
-
-            $brand->update($data);
-
-            $brand->image_url = $brand->image;
+            $brand->image_url = $brand->image && !str_starts_with($brand->image, 'http')
+                ? url(Storage::url($brand->image))
+                : $brand->image;
 
             return response()->json(['message' => 'Marque mise à jour', 'data' => $brand]);
         } catch (ValidationException $e) {
@@ -135,10 +120,6 @@ class ShopBrandController extends Controller
                 abort_unless((int) $brand->entity_id === (int) $entityId, 404);
             }
 
-            if ($brand->image && !str_starts_with($brand->image, 'http')) {
-                $fileService = new \App\Services\FileUploadService();
-                $fileService->delete($brand->image);
-            }
             $brand->delete();
 
             return response()->json(['message' => 'Marque supprimée']);
