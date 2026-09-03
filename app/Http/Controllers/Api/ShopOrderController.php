@@ -223,7 +223,7 @@ class ShopOrderController extends Controller
                 'client_infos.address' => 'nullable|string|max:500',
                 'client_infos.city' => 'nullable|string|max:255',
                 'payment_method' => 'required|string|in:online,recorded',
-                'paid_by' => 'required_if:payment_method,online|nullable|string|in:wave_senegal,orange_money_senegal',
+                'paid_by' => 'required_if:payment_method,online|nullable|string|in:wave_senegal,orange_money_senegal,wave_business',
                 'items' => 'required|array|min:1',
                 'items.*.item_id' => 'required|exists:shop_items,id',
                 'items.*.quantity' => 'required|integer|min:1',
@@ -358,7 +358,26 @@ class ShopOrderController extends Controller
 
 
             if ($paymentMethod === 'online') {
-                // 1. Création initiale du Log de paiement avec le statut 'init'
+                $entity = Entity::find($entityId);
+
+                // Cas 1 : Wave Business Direct (Paiement direct marchand Wave)
+                if ($validated['paid_by'] === 'wave_business') {
+                    $waveMerchantId = $entity?->wave_business_id;
+                    $paymentLink = $waveMerchantId ? "https://pay.wave.com/m/{$waveMerchantId}?amount={$totalTtc}" : null;
+
+                    $order->update([
+                        'payment_link' => $paymentLink,
+                    ]);
+
+                    return response()->json([
+                        'message' => 'Commande créée avec succès',
+                        'data' => $this->paymentDataForOrder($order),
+                        'payment_link' => $paymentLink,
+                        'wave_merchant_id' => $waveMerchantId,
+                    ], 201);
+                }
+
+                // Cas 2 : Paiements en ligne via Fayko (Wave SN, Orange Money, etc.)
                 $paymentLog = ShopPaymentLog::create([
                     'entity_id' => $entityId,
                     'user_id' => auth()->id() ?? null,
@@ -375,7 +394,6 @@ class ShopOrderController extends Controller
                 ]);
 
                 try {
-                    $entity = Entity::find($entityId);
                     $pubKey = $entity?->fayko_public_key ?: env('FAYKO_PUBLIC_KEY');
                     $secKey = $entity?->fayko_secret_key ?: env('FAYKO_SECRET_KEY');
                     $webKey = $entity?->fayko_webhook_key ?: env('FAYKO_WEBHOOK_KEY');
