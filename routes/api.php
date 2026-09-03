@@ -34,6 +34,7 @@ use App\Http\Controllers\Api\ShopPromoCodeController;
 use App\Http\Controllers\Api\ShopPaymentController;
 use App\Http\Controllers\Api\ShopOrderController;
 use App\Http\Controllers\Api\PaymentRestrictionController;
+use App\Http\Controllers\Api\AppVersionController;
 use App\Http\Controllers\Api\UploadController;
 use App\Http\Controllers\Api\BackofficeNotificationController;
 use App\Http\Controllers\Api\ClientNotificationController;
@@ -80,6 +81,7 @@ Route::prefix('admin-invitations')->group(function () {
 
 // ─── Résolution publique de boutique ────────────────────────────────────────
 Route::get('/entities/resolve', [EntityController::class, 'resolve']);
+Route::get('/app/version-check', [AppVersionController::class, 'check']);
 
 // ─── Boutique Publique (sans auth) ──────────────────────────────────────────
 Route::prefix('shop')->middleware(['resolve.entity'])->group(function () {
