@@ -109,13 +109,16 @@ class SaleController extends Controller
                 // Stocker l'ordonnance si fournie
                 $prescriptionPath = null;
                 if ($request->hasFile('prescription')) {
-                    $prescriptionPath = $request->file('prescription')->store('prescriptions', 'public');
+                    $fileService = new \App\Services\FileUploadService();
+                    $uploaded = $fileService->upload($request->file('prescription'), 'prescriptions');
+                    $prescriptionPath = $uploaded['path'];
                 }
 
                 $order = Order::create([
                     'entity_id'       => $entityId,
                     'user_id'          => $client->id,
                     'card_id'          => $card->id,
+                    'manager_id'       => $request->user()?->id,
                     'reference'        => 'SALE-' . date('YmdHis') . '-' . rand(1000, 9999),
                     'name'             => 'Achat Pharmacie',
                     'description'      => $validated['description'] ?? null,
@@ -129,30 +132,34 @@ class SaleController extends Controller
                     'prescription_photo' => $prescriptionPath,
                 ]);
 
+
                 // Ajouter les points à la carte
                 $card->increment('credit', $pointsEarned);
 
                 // Historique de points (résilient si colonnes pas encore migrées)
                 try {
                     CardCredit::create([
-                        'entity_id' => $card->entity_id,
-                        'card_id'     => $card->id,
-                        'order_id'    => $order->id,
-                        'amount'      => $pointsEarned,
-                        'points'      => $pointsEarned,
-                        'credit'      => $pointsEarned,
-                        'type'        => 'earned',
-                        'description' => "Points gagnés — {$order->reference}",
+                        'entity_id'  => $card->entity_id,
+                        'card_id'    => $card->id,
+                        'order_id'   => $order->id,
+                        'manager_id' => $request->user()?->id,
+                        'amount'     => $pointsEarned,
+                        'points'     => $pointsEarned,
+                        'credit'     => $pointsEarned,
+                        'type'       => 'earned',
+                        'description'=> "Points gagnés — {$order->reference}",
                     ]);
                 } catch (\Illuminate\Database\QueryException $qe) {
                     $cc = new CardCredit();
-                    $cc->entity_id = $card->entity_id;
-                    $cc->card_id  = $card->id;
-                    $cc->order_id = $order->id;
-                    $cc->amount   = $pointsEarned;
-                    $cc->credit   = $pointsEarned;
+                    $cc->entity_id  = $card->entity_id;
+                    $cc->card_id   = $card->id;
+                    $cc->order_id  = $order->id;
+                    $cc->manager_id = $request->user()?->id;
+                    $cc->amount    = $pointsEarned;
+                    $cc->credit    = $pointsEarned;
                     $cc->save();
                 }
+
 
                 Log::info('[SaleController@store] Sale created', [
                     'order_id'  => $order->id,

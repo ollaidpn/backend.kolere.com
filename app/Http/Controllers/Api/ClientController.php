@@ -7,6 +7,8 @@ use App\Models\Card;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use App\Http\Controllers\Controller;
+use App\Services\FileUploadService;
+use App\Services\ShopMailFromResolver;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
@@ -69,17 +71,18 @@ class ClientController extends Controller
     public function show($id): JsonResponse
     {
         try {
-            $query = User::with(['card.cardCredits', 'orders', 'health']);
+            $query = User::with(['card.cardCredits', 'orders']);
             if ($entityId = request()->attributes->get('current_entity_id')) {
                 $query->whereHas('card', fn ($cardQuery) => $cardQuery->where('entity_id', $entityId));
             }
             $client = $query->findOrFail($id);
 
             $data = $client->toArray();
+            $fileService = new FileUploadService();
             if ($client->avatar) {
                 $data['avatar_url'] = str_starts_with($client->avatar, 'http')
                     ? $client->avatar
-                    : url(\Illuminate\Support\Facades\Storage::url($client->avatar));
+                    : $fileService->getUrl($client->avatar);
             } else {
                 $data['avatar_url'] = null;
             }
@@ -91,57 +94,26 @@ class ClientController extends Controller
         }
     }
 
-    public function updateHealth(Request $request, $id): JsonResponse
-    {
-        try {
-            $client = User::findOrFail($id);
-
-            $validated = $request->validate([
-                'blood_type' => 'nullable|string|max:5',
-                'weight_kg' => 'nullable|numeric|min:0',
-                'height_cm' => 'nullable|integer|min:0',
-                'medical_history' => 'nullable|string',
-                'chronic_diseases' => 'nullable|string',
-                'current_treatments' => 'nullable|string',
-                'emergency_notes' => 'nullable|string',
-                'emergency_contact_name' => 'nullable|string|max:255',
-                'emergency_contact_phone' => 'nullable|string|max:50',
-                'emergency_contact_relation' => 'nullable|string|max:100',
-                'allergies' => 'nullable|array',
-            ]);
-
-            $health = $client->health()->updateOrCreate(
-                ['user_id' => $client->id],
-                $validated
-            );
-
-            return response()->json([
-                'message' => 'Fiche de santé mise à jour avec succès',
-                'data' => $health,
-            ]);
-        } catch (\Exception $e) {
-            Log::error('[ClientController@updateHealth] Error', ['id' => $id, 'message' => $e->getMessage()]);
-            return response()->json(['message' => 'Erreur lors de la mise à jour de la fiche de santé'], 500);
-        }
-    }
-
     public function store(Request $request): JsonResponse
     {
         try {
+            // Validation des entrées
             $validated = $request->validate([
                 'name' => 'required|string|max:255',
-                'email' => 'required|email|unique:users,email',
+                'email' => 'nullable|email|unique:users,email',
                 'phone' => 'required|string|max:20',
-                'address' => 'required|string|max:500',
+                'address' => 'nullable|string|max:500',
                 'password' => 'nullable|string|min:6',
+                'card_id' => 'nullable|exists:cards,id',
             ]);
 
-            // Créer le client
+            // Créer le client (email par défaut si vide)
+            $dummyEmail = 'client_' . time() . '_' . rand(100, 999) . '@boutique.local';
             $client = User::create([
                 'name' => $validated['name'],
-                'email' => $validated['email'],
+                'email' => $validated['email'] ?: $dummyEmail,
                 'phone' => $validated['phone'],
-                'address' => $validated['address'],
+                'address' => $validated['address'] ?? null,
                 'password' => $validated['password'] ? Hash::make($validated['password']) : Hash::make('password123'),
             ]);
 
@@ -149,16 +121,93 @@ class ClientController extends Controller
             if (!$entityId) {
                 return response()->json(['message' => 'Entité courante introuvable'], 422);
             }
+            $entity = \App\Models\Entity::find($entityId);
 
-            // Créer la carte de fidélité
-            $card = Card::create([
-                'user_id' => $client->id,
-                'entity_id' => $entityId,
-                'card_type_id' => 1, // Type de carte par défaut
-                'number' => 'CARD-' . str_pad($client->id, 8, '0', STR_PAD_LEFT),
-                'points' => 0,
-                'status' => 'active',
-            ]);
+            // Liaison de la carte de fidélité (Physique sélectionnée OU Virtuelle automatique)
+            if (!empty($validated['card_id'])) {
+                $card = Card::where('entity_id', $entityId)
+                    ->where('id', $validated['card_id'])
+                    ->whereNull('user_id')
+                    ->first();
+
+                if ($card) {
+                    $card->update([
+                        'user_id' => $client->id,
+                        'status' => 'active',
+                    ]);
+                } else {
+                    // Si carte introuvable ou déjà prise, fallback création automatique
+                    $card = Card::create([
+                        'user_id' => $client->id,
+                        'entity_id' => $entityId,
+                        'card_type_id' => 1,
+                        'number' => 'CARD-' . str_pad($client->id, 8, '0', STR_PAD_LEFT),
+                        'points' => 0,
+                        'status' => 'active',
+                    ]);
+                }
+            } else {
+                // Créer la carte de fidélité virtuelle automatique par défaut
+                $card = Card::create([
+                    'user_id' => $client->id,
+                    'entity_id' => $entityId,
+                    'card_type_id' => 1,
+                    'number' => 'CARD-' . str_pad($client->id, 8, '0', STR_PAD_LEFT),
+                    'points' => 0,
+                    'status' => 'active',
+                ]);
+            }
+
+            $cardRef = $card->reference ?? $card->number;
+            $shopName = $entity ? $entity->name : 'votre boutique';
+
+
+            // 1. Envoi de l'Email de bienvenue (Automatique)
+            if ($client->email) {
+                try {
+                    $subject = "Bienvenue chez {$shopName} ! 🎁";
+                    $body = "Bonjour {$client->name},\n\n"
+                        . "Votre compte client et votre carte de fidélité chez {$shopName} viennent d'être créés avec succès !\n"
+                        . "Référence de votre carte : {$cardRef}\n\n"
+                        . "Téléchargez l'application mobile {$shopName} pour suivre vos points et profiter de vos cadeaux !\n\n"
+                        . "À très bientôt,\nL'équipe {$shopName}";
+
+                    \Illuminate\Support\Facades\Mail::raw($body, function ($msg) use ($client, $subject, $entity, $shopName, $request) {
+                        $msg->to($client->email)->subject($subject);
+                        app(ShopMailFromResolver::class)->applyTo(function (string $address, string $name) use ($msg) {
+                            $msg->from($address, $name);
+                        }, $entity, $request);
+                    });
+                } catch (\Throwable $mErr) {
+                    Log::error('[ClientController@store] Échec envoi email de bienvenue', ['error' => $mErr->getMessage()]);
+                }
+            }
+
+            // 2. Envoi du SMS de bienvenue (si option coché)
+            if ($request->boolean('send_sms') && $client->phone) {
+                $pubKey = $entity?->diotko_public_key ?: env('DIOTKO_SMS_PUBLIC_KEY');
+                $secKey = $entity?->diotko_secret_key ?: env('DIOTKO_SMS_SECRET_KEY');
+
+                if ($pubKey && $secKey) {
+                    $cc = $request->input('ccphone', '+221');
+                    $fullPhone = $cc . preg_replace('/^\+221/', '', $client->phone);
+
+                    // SMS <= 160 caractères
+                    $smsMessage = "Bienvenue sur {$shopName}. Votre carte {$cardRef} est activée ! Téléchargez l'appli mobile {$shopName} sur Playstore/Appstore pour vos cadeaux. Présentez votre carte à chaque achat.";
+                    
+                    if (mb_strlen($smsMessage) > 160) {
+                        $smsMessage = mb_substr($smsMessage, 0, 160);
+                    }
+
+                    try {
+                        $smsService = new \App\Services\NotificationsService($pubKey, $secKey);
+                        $smsService->sendSmsNow([$fullPhone], $smsMessage);
+                        Log::info("[ClientController@store] SMS de bienvenue envoyé à {$fullPhone}");
+                    } catch (\Throwable $sErr) {
+                        Log::error('[ClientController@store] Échec envoi SMS de bienvenue', ['error' => $sErr->getMessage()]);
+                    }
+                }
+            }
 
             Log::info('[ClientController@store] Client created', ['client_id' => $client->id]);
 

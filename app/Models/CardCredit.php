@@ -12,7 +12,7 @@ class CardCredit extends Model
     use HasFactory;
     use Searchable;
 
-    protected $fillable = ['entity_id', 'card_id', 'order_id', 'reward_id', 'amount', 'credit', 'points', 'type', 'description'];
+    protected $fillable = ['entity_id', 'card_id', 'order_id', 'reward_id', 'manager_id', 'amount', 'credit', 'points', 'type', 'description'];
 
     protected $searchableFields = ['*'];
 
@@ -22,6 +22,12 @@ class CardCredit extends Model
     {
         return $this->belongsTo(Card::class);
     }
+
+    public function manager()
+    {
+        return $this->belongsTo(Manager::class);
+    }
+
 
     public function entity()
     {
