@@ -42,6 +42,11 @@ class User extends Authenticatable
         return $this->hasMany(Order::class);
     }
 
+    public function health()
+    {
+        return $this->hasOne(UserHealth::class);
+    }
+
     public function isSuperAdmin(): bool
     {
         return in_array($this->email, config('auth.super_admins'));

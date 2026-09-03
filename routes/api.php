@@ -134,6 +134,7 @@ Route::prefix('backoffice')->middleware(['auth:sanctum', 'role:manager', 'resolv
     Route::post('/clients', [ClientController::class, 'store']);
     Route::get('/clients/{id}', [ClientController::class, 'show']);
     Route::put('/clients/{id}', [ClientController::class, 'update']);
+    Route::put('/clients/{id}/health', [ClientController::class, 'updateHealth']);
     Route::delete('/clients/{id}', [ClientController::class, 'destroy']);
 
     // Ventes

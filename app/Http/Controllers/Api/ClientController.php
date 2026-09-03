@@ -69,7 +69,7 @@ class ClientController extends Controller
     public function show($id): JsonResponse
     {
         try {
-            $query = User::with(['card.cardCredits', 'orders']);
+            $query = User::with(['card.cardCredits', 'orders', 'health']);
             if ($entityId = request()->attributes->get('current_entity_id')) {
                 $query->whereHas('card', fn ($cardQuery) => $cardQuery->where('entity_id', $entityId));
             }
@@ -88,6 +88,40 @@ class ClientController extends Controller
         } catch (\Exception $e) {
             Log::error('[ClientController@show] Error', ['id' => $id, 'message' => $e->getMessage()]);
             return response()->json(['message' => 'Client non trouvé'], 404);
+        }
+    }
+
+    public function updateHealth(Request $request, $id): JsonResponse
+    {
+        try {
+            $client = User::findOrFail($id);
+
+            $validated = $request->validate([
+                'blood_type' => 'nullable|string|max:5',
+                'weight_kg' => 'nullable|numeric|min:0',
+                'height_cm' => 'nullable|integer|min:0',
+                'medical_history' => 'nullable|string',
+                'chronic_diseases' => 'nullable|string',
+                'current_treatments' => 'nullable|string',
+                'emergency_notes' => 'nullable|string',
+                'emergency_contact_name' => 'nullable|string|max:255',
+                'emergency_contact_phone' => 'nullable|string|max:50',
+                'emergency_contact_relation' => 'nullable|string|max:100',
+                'allergies' => 'nullable|array',
+            ]);
+
+            $health = $client->health()->updateOrCreate(
+                ['user_id' => $client->id],
+                $validated
+            );
+
+            return response()->json([
+                'message' => 'Fiche de santé mise à jour avec succès',
+                'data' => $health,
+            ]);
+        } catch (\Exception $e) {
+            Log::error('[ClientController@updateHealth] Error', ['id' => $id, 'message' => $e->getMessage()]);
+            return response()->json(['message' => 'Erreur lors de la mise à jour de la fiche de santé'], 500);
         }
     }
 
