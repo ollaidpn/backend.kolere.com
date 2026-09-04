@@ -13,7 +13,7 @@ class RewardController extends Controller
 {
     private function currentEntityId(Request $request): ?int
     {
-        return $request->attributes->get('current_entity_id');
+        return $request->attributes->get('current_entity_id') ?: ($request->user()?->entity_id ?: \App\Models\Entity::where('reference', 'ENT-0001')->value('id'));
     }
 
     public function index(Request $request): JsonResponse
@@ -63,8 +63,10 @@ class RewardController extends Controller
             if ($request->hasFile('images')) {
                 $fileService = new \App\Services\FileUploadService();
                 foreach ($request->file('images') as $file) {
-                    $imagePaths[] = $fileService->uploadFile($file, 'rewards');
+                    $uploaded = $fileService->upload($file, 'rewards');
+                    $imagePaths[] = $uploaded['path'] ?? $uploaded['url'] ?? null;
                 }
+                $imagePaths = array_values(array_filter($imagePaths));
             }
 
             $reward = Reward::create(array_merge($validated, [
@@ -115,11 +117,12 @@ class RewardController extends Controller
             // Uploader les nouvelles images
             if ($request->hasFile('images')) {
                 foreach ($request->file('images') as $file) {
-                    $finalImages[] = $fileService->uploadFile($file, 'rewards');
+                    $uploaded = $fileService->upload($file, 'rewards');
+                    $finalImages[] = $uploaded['path'] ?? $uploaded['url'] ?? null;
                 }
             }
 
-            $validated['images'] = array_values(array_unique($finalImages));
+            $validated['images'] = array_values(array_unique(array_filter($finalImages)));
             unset($validated['keep_images']);
 
             $reward->update($validated);
