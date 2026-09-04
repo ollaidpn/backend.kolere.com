@@ -51,6 +51,7 @@ class RewardController extends Controller
                 'value' => 'required|integer|min:0',
                 'stock' => 'nullable|integer|min:0',
                 'status' => 'in:active,inactive',
+                'images.*' => 'nullable|file|mimes:jpg,jpeg,png,svg,webp|max:5120',
             ]);
 
             $entityId = $this->currentEntityId($request);
@@ -58,7 +59,18 @@ class RewardController extends Controller
                 return response()->json(['message' => 'Entité courante introuvable'], 422);
             }
 
-            $reward = Reward::create($validated + ['entity_id' => $entityId]);
+            $imagePaths = [];
+            if ($request->hasFile('images')) {
+                $fileService = new \App\Services\FileUploadService();
+                foreach ($request->file('images') as $file) {
+                    $imagePaths[] = $fileService->uploadFile($file, 'rewards');
+                }
+            }
+
+            $reward = Reward::create(array_merge($validated, [
+                'entity_id' => $entityId,
+                'images' => $imagePaths,
+            ]));
 
             Log::info('[RewardController@store] Reward created', ['reward_id' => $reward->id]);
 
@@ -87,7 +99,28 @@ class RewardController extends Controller
                 'value' => 'required|integer|min:0',
                 'stock' => 'nullable|integer|min:0',
                 'status' => 'required|in:active,inactive',
+                'images.*' => 'nullable|file|mimes:jpg,jpeg,png,svg,webp|max:5120',
+                'keep_images' => 'nullable',
             ]);
+
+            $fileService = new \App\Services\FileUploadService();
+
+            // Conserver les images existantes spécifiées
+            $kept = $request->input('keep_images');
+            if (is_string($kept)) {
+                $kept = json_decode($kept, true);
+            }
+            $finalImages = is_array($kept) ? $kept : [];
+
+            // Uploader les nouvelles images
+            if ($request->hasFile('images')) {
+                foreach ($request->file('images') as $file) {
+                    $finalImages[] = $fileService->uploadFile($file, 'rewards');
+                }
+            }
+
+            $validated['images'] = array_values(array_unique($finalImages));
+            unset($validated['keep_images']);
 
             $reward->update($validated);
 
