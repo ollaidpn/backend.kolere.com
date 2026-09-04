@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Invitation;
+use App\Models\Entity;
 use App\Models\Link;
 use App\Models\Manager;
 use Illuminate\Http\JsonResponse;
@@ -13,9 +14,32 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 use App\Services\ShopMailFromResolver;
+use App\Services\NotificationsService;
 
 class InvitationController extends Controller
 {
+    public function index(Request $request): JsonResponse
+    {
+        $entityId = $request->attributes->get('current_entity_id') ?? $request->input('entity_id');
+
+        Log::info('[InvitationController@index] Listing invitations', ['entity_id' => $entityId]);
+
+        try {
+            $query = Invitation::query()->with(['entity.domain'])->orderByDesc('created_at');
+
+            if ($entityId) {
+                $query->where('entity_id', $entityId);
+            }
+
+            return response()->json([
+                'data' => $query->get(),
+            ]);
+        } catch (\Exception $e) {
+            Log::error('[InvitationController@index] Error', ['message' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
+            return response()->json(['message' => 'Erreur serveur.'], 500);
+        }
+    }
+
     public function store(Request $request): JsonResponse
     {
         $entityId = $request->attributes->get('current_entity_id') ?? $request->input('entity_id');
@@ -80,38 +104,79 @@ class InvitationController extends Controller
             ]);
             Log::info('[InvitationController@store] Invitation created', ['invitation_id' => $invitation->id]);
 
-            if ($inviteType === 'email') {
-                $frontendBase = rtrim((string) ($request->headers->get('origin') ?: env('FRONTEND_URL', config('app.url'))), '/');
-                $inviteLink = $frontendBase . '/invitation/' . $invitation->token;
-                $entity = \App\Models\Entity::find($entityId);
-                $shopName = $entity ? $entity->name : 'votre boutique';
+            $deliveryResult = $this->deliverInvitation($invitation, $request, $entityId);
 
-                try {
-                    Mail::send('emails.manager_invitation', [
-                        'invitation' => $invitation,
-                        'inviteLink' => $inviteLink,
-                        'shopName'   => $shopName,
-                    ], function ($message) use ($invitation, $shopName, $entity, $request) {
-                        $message->to($invitation->email)->subject("Invitation manager - {$shopName}");
-                        app(ShopMailFromResolver::class)->applyTo(function (string $address, string $name) use ($message) {
-                            $message->from($address, $name);
-                        }, $entity, $request);
-                    });
-                } catch (\Throwable $mailError) {
-                    Log::warning('[InvitationController@store] Mail send failed', [
-                        'message' => $mailError->getMessage(),
-                    ]);
-                }
+            if (!$deliveryResult['success']) {
+                return response()->json([
+                    'message' => $deliveryResult['message'],
+                    'data' => $invitation->load('entity.domain'),
+                ], 500);
             }
 
             return response()->json([
                 'message' => 'Invitation envoyée.',
-                'data'    => $invitation->load('entity'),
+                'data'    => $invitation->load('entity.domain'),
             ], 201);
         } catch (\Illuminate\Validation\ValidationException $e) {
             throw $e;
         } catch (\Exception $e) {
             Log::error('[InvitationController@store] Error', ['message' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
+            return response()->json(['message' => 'Erreur serveur.'], 500);
+        }
+    }
+
+    public function resend(Request $request, Invitation $invitation): JsonResponse
+    {
+        $entityId = $request->attributes->get('current_entity_id') ?? $request->input('entity_id');
+
+        if ($entityId && (int) $invitation->entity_id !== (int) $entityId) {
+            return response()->json(['message' => 'Invitation introuvable.'], 404);
+        }
+
+        Log::info('[InvitationController@resend] Resending invitation', [
+            'invitation_id' => $invitation->id,
+            'entity_id' => $entityId,
+        ]);
+
+        try {
+            if ($invitation->status !== 'pending') {
+                return response()->json(['message' => 'Cette invitation a déjà été traitée.'], 422);
+            }
+
+            $deliveryResult = $this->deliverInvitation($invitation, $request, $entityId);
+
+            if (!$deliveryResult['success']) {
+                return response()->json([
+                    'message' => $deliveryResult['message'],
+                ], 500);
+            }
+
+            return response()->json(['message' => 'Invitation renvoyée.']);
+        } catch (\Exception $e) {
+            Log::error('[InvitationController@resend] Error', ['message' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
+            return response()->json(['message' => 'Erreur serveur.'], 500);
+        }
+    }
+
+    public function destroy(Request $request, Invitation $invitation): JsonResponse
+    {
+        $entityId = $request->attributes->get('current_entity_id') ?? $request->input('entity_id');
+
+        if ($entityId && (int) $invitation->entity_id !== (int) $entityId) {
+            return response()->json(['message' => 'Invitation introuvable.'], 404);
+        }
+
+        Log::info('[InvitationController@destroy] Deleting invitation', [
+            'invitation_id' => $invitation->id,
+            'entity_id' => $entityId,
+        ]);
+
+        try {
+            $invitation->delete();
+
+            return response()->json(['message' => 'Invitation supprimée.']);
+        } catch (\Exception $e) {
+            Log::error('[InvitationController@destroy] Error', ['message' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
             return response()->json(['message' => 'Erreur serveur.'], 500);
         }
     }
@@ -206,6 +271,79 @@ class InvitationController extends Controller
             Log::error('[InvitationController@accept] Error', ['message' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
             return response()->json(['message' => 'Erreur serveur.'], 500);
         }
+    }
+
+    private function deliverInvitation(Invitation $invitation, Request $request, ?int $entityId = null): array
+    {
+        $entity = $entityId ? Entity::find($entityId) : $invitation->entity;
+        $frontendBase = rtrim((string) ($request->headers->get('origin') ?: env('FRONTEND_URL', config('app.url'))), '/');
+        $inviteLink = $frontendBase . '/invitation/' . $invitation->token;
+        $shopName = $entity ? $entity->name : 'votre boutique';
+        $deliveryErrors = [];
+        $deliveredChannels = [];
+
+        if (filter_var((string) $invitation->email, FILTER_VALIDATE_EMAIL)) {
+            try {
+                Mail::send('emails.manager_invitation', [
+                    'invitation' => $invitation,
+                    'inviteLink' => $inviteLink,
+                    'shopName'   => $shopName,
+                ], function ($message) use ($invitation, $shopName, $entity, $request) {
+                    $message->to($invitation->email)->subject("Invitation manager - {$shopName}");
+                    app(ShopMailFromResolver::class)->applyTo(function (string $address, string $name) use ($message) {
+                        $message->from($address, $name);
+                    }, $entity, $request);
+                });
+
+                $deliveredChannels[] = 'email';
+            } catch (\Throwable $mailError) {
+                Log::warning('[InvitationController@deliverInvitation] Mail send failed', [
+                    'invitation_id' => $invitation->id,
+                    'message' => $mailError->getMessage(),
+                ]);
+                $deliveryErrors[] = 'Impossible d\'envoyer l\'email d\'invitation.';
+            }
+        }
+
+        $phone = trim((string) ($invitation->ccphone ?: '') . (string) ($invitation->phone ?: ''));
+        if ($phone !== '') {
+            try {
+                $pubKey = $entity?->diotko_public_key ?: env('DIOTKO_SMS_PUBLIC_KEY');
+                $secKey = $entity?->diotko_secret_key ?: env('DIOTKO_SMS_SECRET_KEY');
+                $smsService = new NotificationsService($pubKey, $secKey);
+                $smsMessage = "Invitation Kolere pour {$shopName}. Ouvrez ce lien pour accepter: {$inviteLink}";
+                $smsResult = $smsService->sendSmsNow([$phone], $smsMessage);
+
+                if (!($smsResult['success'] ?? false)) {
+                    Log::warning('[InvitationController@deliverInvitation] SMS send failed', [
+                        'invitation_id' => $invitation->id,
+                        'message' => $smsResult['message'] ?? 'Erreur SMS inconnue',
+                    ]);
+                    $deliveryErrors[] = $smsResult['message'] ?? 'Impossible d\'envoyer le SMS d\'invitation.';
+                } else {
+                    $deliveredChannels[] = 'sms';
+                }
+            } catch (\Throwable $smsError) {
+                Log::warning('[InvitationController@deliverInvitation] SMS send exception', [
+                    'invitation_id' => $invitation->id,
+                    'message' => $smsError->getMessage(),
+                ]);
+                $deliveryErrors[] = 'Impossible d\'envoyer le SMS d\'invitation.';
+            }
+        }
+
+        if (empty($deliveredChannels)) {
+            return [
+                'success' => false,
+                'message' => $deliveryErrors[0] ?? 'Aucun canal de notification disponible.',
+            ];
+        }
+
+        return [
+            'success' => true,
+            'message' => 'Invitation envoyée via ' . implode(' et ', $deliveredChannels) . '.',
+            'errors' => $deliveryErrors,
+        ];
     }
 
     public function refuse(string $token): JsonResponse

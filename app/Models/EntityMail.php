@@ -17,6 +17,7 @@ class EntityMail extends Model
         'host',
         'server',
         'password',
+        'new_password',
         'webmail_link',
         'requested_at',
         'activated_at',
@@ -24,6 +25,7 @@ class EntityMail extends Model
 
     protected $casts = [
         'password' => 'encrypted',
+        'new_password' => 'encrypted',
         'requested_at' => 'datetime',
         'activated_at' => 'datetime',
     ];

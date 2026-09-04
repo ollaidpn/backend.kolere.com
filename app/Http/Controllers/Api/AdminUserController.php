@@ -5,10 +5,12 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Admin;
 use App\Models\AdminInvitation;
+use App\Services\NotificationsService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 
 class AdminUserController extends Controller
@@ -52,9 +54,44 @@ class AdminUserController extends Controller
             ]);
             Log::info('[AdminUserController@store] Invitation created', ['invitation_id' => $invitation->id]);
 
+            $frontendBase = rtrim((string) env('FRONTEND_URL', config('app.url')), '/');
+            $inviteLink = $frontendBase . '/admin-invitations/' . $invitation->token;
+            $notificationErrors = [];
+
+            try {
+                Mail::raw(
+                    "Bonjour {$invitation->name},\n\nVous avez été invité(e) à rejoindre Kolere en tant qu'administrateur.\n\nOuvrez ce lien pour accepter l'invitation : {$inviteLink}\n",
+                    function ($message) use ($invitation) {
+                        $message->to($invitation->email)->subject('Invitation administrateur Kolere');
+                    }
+                );
+            } catch (\Throwable $mailError) {
+                Log::warning('[AdminUserController@store] Mail send failed', ['message' => $mailError->getMessage()]);
+                $notificationErrors[] = 'Email non envoyé.';
+            }
+
+            $phone = trim((string) ($invitation->ccphone ?: '') . (string) ($invitation->phone ?: ''));
+            if ($phone !== '') {
+                try {
+                    $smsService = new NotificationsService();
+                    $smsResult = $smsService->sendSmsNow([$phone], "Invitation administrateur Kolere. Ouvrez ce lien pour accepter: {$inviteLink}");
+
+                    if (!($smsResult['success'] ?? false)) {
+                        Log::warning('[AdminUserController@store] SMS send failed', ['message' => $smsResult['message'] ?? 'Erreur SMS inconnue']);
+                        $notificationErrors[] = 'SMS non envoyé.';
+                    }
+                } catch (\Throwable $smsError) {
+                    Log::warning('[AdminUserController@store] SMS send exception', ['message' => $smsError->getMessage()]);
+                    $notificationErrors[] = 'SMS non envoyé.';
+                }
+            }
+
             return response()->json([
-                'message' => 'Invitation envoyée avec succès.',
+                'message' => empty($notificationErrors)
+                    ? 'Invitation envoyée avec succès.'
+                    : 'Invitation créée, mais la notification n\'a pas pu être envoyée entièrement.',
                 'data' => $invitation,
+                'notification_errors' => $notificationErrors,
             ], 201);
         } catch (\Illuminate\Validation\ValidationException $e) {
             throw $e;

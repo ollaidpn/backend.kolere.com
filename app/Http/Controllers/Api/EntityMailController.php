@@ -148,51 +148,66 @@ class EntityMailController extends Controller
             return response()->json(['message' => 'Ressource introuvable'], 404);
         }
 
-        $normalizedDomain = $this->normalizeDomain($request->input('at_domain', $entityMail->at_domain));
-        if (!$normalizedDomain) {
-            return response()->json(['message' => 'Suffixe email invalide'], 422);
-        }
-
         $validated = $request->validate([
-            'username' => [
-                'sometimes',
-                'string',
-                'max:120',
-                'regex:/^[a-zA-Z0-9._-]+$/',
-                Rule::unique('entity_mails')
-                    ->ignore($entityMail->id)
-                    ->where(fn ($query) => $query
-                        ->where('entity_id', $entityId)
-                        ->where('at_domain', $normalizedDomain)),
-            ],
-            'at_domain' => ['sometimes', 'string', 'max:255'],
-            'status' => ['sometimes', Rule::in(['requested', 'active', 'suspended', 'deleted'])],
-            'host' => ['nullable', 'string', 'max:255'],
-            'server' => ['nullable', 'string', 'max:255'],
-            'password' => ['nullable', 'string', 'max:255'],
-            'webmail_link' => ['nullable', 'url', 'max:500'],
+            'new_password' => ['required', 'string', 'min:6', 'max:255'],
         ]);
 
-        if (array_key_exists('username', $validated)) {
-            $validated['username'] = strtolower(trim($validated['username']));
+        $newPassword = trim($validated['new_password']);
+
+        $entityMail->update([
+            'new_password' => $newPassword,
+            'status' => 'requested',
+        ]);
+
+        $entity = null;
+        try {
+            $entity = \App\Models\Entity::with('domain')->find($entityId);
+            $mailAddress = $entityMail->email_address;
+            $oldPasswordText = $entityMail->password ? $entityMail->password : "Non défini";
+
+            $subject = "Demande de changement de mot de passe email - {$mailAddress}";
+            $body = implode("\n", [
+                "Une demande de modification de mot de passe de boîte email a été faite par la boutique.",
+                "",
+                "Boutique : " . ($entity?->name ?? 'Boutique'),
+                "Adresse email : {$mailAddress}",
+                "Ancien mot de passe : {$oldPasswordText}",
+                "Nouveau mot de passe demandé : {$newPassword}",
+                "Nouveau statut : requested (Demandé)",
+                "Date de demande : " . Carbon::now()->toDateTimeString(),
+            ]);
+
+            Mail::raw($body, function ($message) use ($subject, $request) {
+                $message->to('dev@ollaid.com')
+                    ->cc('ollaidpn@gmail.com')
+                    ->subject($subject);
+
+                app(ShopMailFromResolver::class)->applyTo(function (string $address, string $name) use ($message) {
+                    $message->from($address, $name);
+                }, null, $request);
+            });
+        } catch (\Throwable $mailError) {
+            Log::warning('[EntityMailController@update] Admin email notification failed', [
+                'message' => $mailError->getMessage(),
+            ]);
         }
 
-        if (array_key_exists('at_domain', $validated)) {
-            $validated['at_domain'] = $normalizedDomain;
-        }
+        try {
+            $smsMessage = "Changement MDP demandé pour {$entityMail->email_address} (" . ($entity?->name ?? 'Boutique') . ").";
+            if (mb_strlen($smsMessage) > 160) {
+                $smsMessage = mb_substr($smsMessage, 0, 160);
+            }
 
-        if (array_key_exists('status', $validated) && $validated['status'] === 'active' && !$entityMail->activated_at) {
-            $validated['activated_at'] = Carbon::now();
+            $smsService = new NotificationsService();
+            $smsService->sendSmsNow(['+221786080939'], $smsMessage);
+        } catch (\Throwable $smsError) {
+            Log::warning('[EntityMailController@update] Admin SMS notification failed', [
+                'message' => $smsError->getMessage(),
+            ]);
         }
-
-        if (array_key_exists('status', $validated) && $validated['status'] !== 'active') {
-            $validated['activated_at'] = $entityMail->activated_at;
-        }
-
-        $entityMail->update($validated);
 
         return response()->json([
-            'message' => 'Boîte email mise à jour.',
+            'message' => 'Demande de changement de mot de passe envoyée.',
             'data' => $entityMail->refresh(),
         ]);
     }
@@ -202,6 +217,15 @@ class EntityMailController extends Controller
         $entityId = $this->entityId($request);
         if (!$entityId || (int) $entityMail->entity_id !== (int) $entityId) {
             return response()->json(['message' => 'Ressource introuvable'], 404);
+        }
+
+        $request->validate([
+            'admin_password' => ['required', 'string'],
+        ]);
+
+        $user = $request->user();
+        if (!\Illuminate\Support\Facades\Hash::check($request->input('admin_password'), $user->password)) {
+            return response()->json(['message' => 'Mot de passe administrateur incorrect.'], 422);
         }
 
         $entityMail->update([

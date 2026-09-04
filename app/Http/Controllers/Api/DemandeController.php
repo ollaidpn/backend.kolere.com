@@ -122,4 +122,23 @@ class DemandeController extends Controller
             return response()->json(['message' => 'Erreur lors de la réponse'], 500);
         }
     }
+
+    public function destroy(Request $request, $id): JsonResponse
+    {
+        try {
+            $query = Demande::query();
+            if ($entityId = $this->entityId($request)) {
+                $query->where('entity_id', $entityId);
+            }
+            $d = $query->findOrFail($id);
+            $d->delete();
+
+            Log::info('[DemandeController@destroy]', ['id' => $id]);
+
+            return response()->json(['message' => 'Demande supprimée avec succès']);
+        } catch (\Exception $e) {
+            Log::error('[DemandeController@destroy]', ['msg' => $e->getMessage()]);
+            return response()->json(['message' => 'Erreur lors de la suppression de la demande'], 500);
+        }
+    }
 }

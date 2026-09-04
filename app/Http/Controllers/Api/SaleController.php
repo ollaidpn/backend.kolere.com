@@ -280,4 +280,44 @@ class SaleController extends Controller
             return response()->json(['data' => []]);
         }
     }
+
+    public function destroy(Request $request, $id): JsonResponse
+    {
+        try {
+            $request->validate([
+                'admin_password' => 'required|string',
+            ]);
+
+            $manager = $request->user();
+            if (!Hash::check($request->input('admin_password'), $manager->password)) {
+                return response()->json(['message' => 'Mot de passe administrateur incorrect.'], 422);
+            }
+
+            $query = Order::query();
+            if ($entityId = $this->entityId($request)) {
+                $query->where('entity_id', $entityId);
+            }
+            $sale = $query->findOrFail($id);
+
+            DB::transaction(function () use ($sale) {
+                // Déduire les points attribués si la carte existe toujours
+                if ($sale->card_id && $sale->points_earned > 0) {
+                    $card = Card::find($sale->card_id);
+                    if ($card) {
+                        $card->decrement('credit', min($card->credit, $sale->points_earned));
+                    }
+                }
+                $sale->delete();
+            });
+
+            Log::info('[SaleController@destroy] Sale deleted', ['id' => $id]);
+
+            return response()->json(['message' => 'Vente supprimée avec succès.']);
+        } catch (ValidationException $e) {
+            throw $e;
+        } catch (\Exception $e) {
+            Log::error('[SaleController@destroy] Error', ['id' => $id, 'message' => $e->getMessage()]);
+            return response()->json(['message' => 'Erreur lors de la suppression de la vente.'], 500);
+        }
+    }
 }

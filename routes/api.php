@@ -164,7 +164,10 @@ Route::prefix('backoffice')->middleware(['auth:sanctum', 'role:manager', 'resolv
 
 
     // Invitations managers
+    Route::get('/invitations', [InvitationController::class, 'index']);
     Route::post('/invitations', [InvitationController::class, 'store']);
+    Route::post('/invitations/{invitation}/resend', [InvitationController::class, 'resend']);
+    Route::delete('/invitations/{invitation}', [InvitationController::class, 'destroy']);
 
     // Clients
     Route::get('/clients/stats', [ClientController::class, 'getStats']);
@@ -182,6 +185,7 @@ Route::prefix('backoffice')->middleware(['auth:sanctum', 'role:manager', 'resolv
     Route::get('/sales', [SaleController::class, 'index']);
     Route::post('/sales', [SaleController::class, 'store']);
     Route::get('/sales/{id}', [SaleController::class, 'show']);
+    Route::delete('/sales/{id}', [SaleController::class, 'destroy']);
 
     // Cartes de fidélité
     Route::get('/cards/scan/{reference}', [CardController::class, 'scanByReference']);
@@ -296,6 +300,7 @@ Route::prefix('backoffice')->middleware(['auth:sanctum', 'role:manager', 'resolv
     Route::get('/demandes', [DemandeController::class, 'index']);
     Route::get('/demandes/{id}', [DemandeController::class, 'show']);
     Route::post('/demandes/{id}/respond', [DemandeController::class, 'respond']);
+    Route::delete('/demandes/{id}', [DemandeController::class, 'destroy']);
 
     // Domaines personnalisés
     Route::prefix('settings/shop/domain')->group(function () {

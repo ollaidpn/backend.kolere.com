@@ -48,7 +48,7 @@ class ClientController extends Controller
                            ->paginate($perPage);
 
             $items = collect($clients->items())->map(function ($client) {
-                $client->points = $client->card ? $client->card->credit : 0;
+                $client->points = $client->card ? ($client->card->points ?? $client->card->credit ?? 0) : 0;
                 $client->card_reference = $client->card ? $client->card->reference : null;
                 $client->card_status = $client->card ? $client->card->status : 'inactive';
                 return $client;

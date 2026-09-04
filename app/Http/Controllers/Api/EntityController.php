@@ -6,9 +6,12 @@ use App\Http\Controllers\Controller;
 use App\Models\Entity;
 use App\Models\Invitation;
 use App\Services\FileUploadService;
+use App\Services\NotificationsService;
+use App\Services\ShopMailFromResolver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 
 class EntityController extends Controller
@@ -163,10 +166,52 @@ class EntityController extends Controller
             ]);
             Log::info('[EntityController@store] Invitation created', ['invitation_id' => $invitation->id]);
 
+            $notificationErrors = [];
+            $frontendBase = rtrim((string) ($request->headers->get('origin') ?: env('FRONTEND_URL', config('app.url'))), '/');
+            $inviteLink = $frontendBase . '/invitation/' . $invitation->token;
+            $shopName = $entity->name;
+
+            try {
+                Mail::send('emails.manager_invitation', [
+                    'invitation' => $invitation,
+                    'inviteLink' => $inviteLink,
+                    'shopName' => $shopName,
+                ], function ($message) use ($invitation, $shopName, $entity, $request) {
+                    $message->to($invitation->email)->subject("Invitation manager - {$shopName}");
+                    app(ShopMailFromResolver::class)->applyTo(function (string $address, string $name) use ($message) {
+                        $message->from($address, $name);
+                    }, $entity, $request);
+                });
+            } catch (\Throwable $mailError) {
+                Log::warning('[EntityController@store] Mail send failed', ['message' => $mailError->getMessage()]);
+                $notificationErrors[] = 'Email non envoyé.';
+            }
+
+            $phone = trim((string) ($invitation->ccphone ?: '') . (string) ($invitation->phone ?: ''));
+            if ($phone !== '') {
+                try {
+                    $pubKey = $entity?->diotko_public_key ?: env('DIOTKO_SMS_PUBLIC_KEY');
+                    $secKey = $entity?->diotko_secret_key ?: env('DIOTKO_SMS_SECRET_KEY');
+                    $smsService = new NotificationsService($pubKey, $secKey);
+                    $smsResult = $smsService->sendSmsNow([$phone], "Invitation Kolere pour {$shopName}. Ouvrez ce lien pour accepter: {$inviteLink}");
+
+                    if (!($smsResult['success'] ?? false)) {
+                        Log::warning('[EntityController@store] SMS send failed', ['message' => $smsResult['message'] ?? 'Erreur SMS inconnue']);
+                        $notificationErrors[] = 'SMS non envoyé.';
+                    }
+                } catch (\Throwable $smsError) {
+                    Log::warning('[EntityController@store] SMS send exception', ['message' => $smsError->getMessage()]);
+                    $notificationErrors[] = 'SMS non envoyé.';
+                }
+            }
+
             return response()->json([
-                'message'    => 'Boutique créée et invitation envoyée.',
-                'data'       => $entity->load('domain'),
+                'message' => empty($notificationErrors)
+                    ? 'Boutique créée et invitation envoyée.'
+                    : 'Boutique créée, mais l\'invitation n\'a pas pu être entièrement envoyée.',
+                'data' => $entity->load('domain'),
                 'invitation' => $invitation,
+                'notification_errors' => $notificationErrors,
             ], 201);
         } catch (\Illuminate\Validation\ValidationException $e) {
             throw $e;

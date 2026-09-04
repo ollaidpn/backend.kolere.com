@@ -41,6 +41,104 @@ class AuthController extends Controller
         return $ccphone ? trim($ccphone . ' ' . $phone) : $phone;
     }
 
+    private function phoneLookupVariants(?string $ccphone, ?string $phone): array
+    {
+        $ccphone = $this->normalizeOptionalString($ccphone);
+        $phone = $this->normalizeOptionalString($phone);
+
+        if ($phone === null) {
+            return [];
+        }
+
+        $cleanPhone = preg_replace('/\D/', '', $phone);
+        $cleanCcphone = $ccphone ? preg_replace('/\D/', '', $ccphone) : null;
+
+        $variants = [
+            $phone,
+            $cleanPhone,
+        ];
+
+        if ($ccphone !== null) {
+            $variants[] = trim($ccphone . ' ' . $phone);
+            $variants[] = trim($ccphone . $phone);
+        }
+
+        if ($cleanCcphone !== null && $cleanPhone !== '') {
+            $variants[] = $cleanCcphone . $cleanPhone;
+            $variants[] = $cleanCcphone . $phone;
+        }
+
+        return array_values(array_unique(array_filter($variants)));
+    }
+
+    private function findUserByPhone(?string $ccphone, ?string $phone): ?User
+    {
+        $variants = $this->phoneLookupVariants($ccphone, $phone);
+
+        if (empty($variants)) {
+            return null;
+        }
+
+        return User::query()->whereIn('phone', $variants)->first();
+    }
+
+    private function collectRegistrationConflicts(string $email, ?string $ccphone, ?string $phone): array
+    {
+        $conflicts = [];
+
+        if ($email !== '' && User::whereRaw('LOWER(email) = ?', [$email])->exists()) {
+            $conflicts['email'] = true;
+        }
+
+        if ($this->findUserByPhone($ccphone, $phone)) {
+            $conflicts['phone'] = true;
+        }
+
+        return $conflicts;
+    }
+
+    private function registrationConflictResponse(array $conflicts, string $email, ?string $ccphone, ?string $phone): JsonResponse
+    {
+        $errors = [];
+
+        if (!empty($conflicts['email'])) {
+            $errors['email'] = ['Un utilisateur utilise déjà cet email.'];
+        }
+
+        if (!empty($conflicts['phone'])) {
+            $errors['phone'] = ['Un utilisateur utilise déjà ce numéro de téléphone.'];
+        }
+
+        $message = count($errors) > 1
+            ? 'Un utilisateur utilise déjà cet email ou ce numéro de téléphone.'
+            : (!empty($errors['email'])
+                ? 'Un utilisateur utilise déjà cet email.'
+                : 'Un utilisateur utilise déjà ce numéro de téléphone.');
+
+        return response()->json([
+            'message' => $message,
+            'errors' => $errors,
+            'duplicate' => [
+                'email' => !empty($errors['email']) ? $email : null,
+                'phone' => !empty($errors['phone']) ? [
+                    'ccphone' => $ccphone,
+                    'phone' => $phone,
+                ] : null,
+            ],
+        ], 422);
+    }
+
+    private function registrationOtpCacheKey(?string $email, ?string $ccphone, ?string $phone): string
+    {
+        $normalizedEmail = mb_strtolower(trim((string) $email));
+        if ($normalizedEmail !== '') {
+            return 'client_register_otp:email:' . $normalizedEmail;
+        }
+
+        $phoneDigits = preg_replace('/\D/', '', $this->buildPhoneValue($ccphone, $phone) ?? '');
+        return 'client_register_otp:phone:' . ($phoneDigits !== '' ? $phoneDigits : 'unknown');
+    }
+
     public function registerClient(Request $request): JsonResponse
     {
         Log::info('[AuthController@registerClient] Attempt', ['email' => $request->email]);
@@ -49,56 +147,17 @@ class AuthController extends Controller
             $email = mb_strtolower(trim((string) $request->input('email')));
             $phone = $this->normalizeOptionalString($request->phone);
             $ccphone = $request->input('ccphone', '+221');
-            $entityId = $request->attributes->get('current_entity_id') ?? $request->input('entity_id');
-
-            if ($phone) {
-                $cleanPhone = preg_replace('/\D/', '', $phone);
-                $fullPhone = preg_replace('/\D/', '', $ccphone . $phone);
-                $phoneUser = User::where(function ($q) use ($phone, $cleanPhone, $fullPhone) {
-                    $q->where('phone', $phone)
-                      ->orWhere('phone', $cleanPhone)
-                      ->orWhere('phone', $fullPhone);
-                })->first();
-
-                if ($phoneUser) {
-                    $hasCard = $entityId
-                        ? Card::where('user_id', $phoneUser->id)->where('entity_id', $entityId)->exists()
-                        : Card::where('user_id', $phoneUser->id)->exists();
-
-                    if ($hasCard) {
-                        return response()->json([
-                            'message' => 'Ce numéro de téléphone appartient déjà à un autre compte sur cette boutique. Veuillez vous connecter ou utiliser un autre numéro.',
-                            'errors' => [
-                                'phone' => ['Ce numéro de téléphone appartient déjà à un autre compte.']
-                            ]
-                        ], 422);
-                    }
-                }
-            }
-
-            if (!empty($email)) {
-                $emailUser = User::whereRaw('LOWER(email) = ?', [$email])->first();
-                if ($emailUser) {
-                    $hasCard = $entityId
-                        ? Card::where('user_id', $emailUser->id)->where('entity_id', $entityId)->exists()
-                        : Card::where('user_id', $emailUser->id)->exists();
-
-                    if ($hasCard) {
-                        return response()->json([
-                            'message' => 'Cette adresse e-mail appartient déjà à un autre compte sur cette boutique. Veuillez vous connecter ou utiliser un autre e-mail.',
-                            'errors' => [
-                                'email' => ['Cette adresse e-mail appartient déjà à un autre compte.']
-                            ]
-                        ], 422);
-                    }
-                }
+            $conflicts = $this->collectRegistrationConflicts($email, $ccphone, $phone);
+            if (!empty($conflicts)) {
+                return $this->registrationConflictResponse($conflicts, $email, $ccphone, $phone);
             }
 
             $validator = Validator::make($request->all(), [
                 'name' => 'required|string|max:255',
-                'email' => 'required|email',
+                'email' => 'nullable|email',
                 'password' => 'required|string|min:8|confirmed',
-                'phone' => 'nullable|string|max:30',
+                'ccphone' => 'required|string|max:10',
+                'phone' => 'required|string|max:30',
                 'address' => 'nullable|string|max:255',
             ]);
 
@@ -111,9 +170,9 @@ class AuthController extends Controller
 
             $user = User::create([
                 'name' => $request->name,
-                'email' => $request->email,
+                'email' => $email !== '' ? $email : null,
                 'password' => Hash::make($request->password),
-                'phone' => $this->normalizeOptionalString($request->phone),
+                'phone' => $this->buildPhoneValue($ccphone, $phone),
                 'address' => $this->normalizeOptionalString($request->address),
             ]);
 
@@ -149,58 +208,16 @@ class AuthController extends Controller
             $email = mb_strtolower(trim((string) $request->input('email')));
             $phone = $this->normalizeOptionalString($request->phone);
             $ccphone = $request->input('ccphone', '+221');
-            $entityId = $request->attributes->get('current_entity_id') ?? $request->input('entity_id');
-
-            // 1. Vérifier si un utilisateur existe déjà spécifiquement par TÉLÉPHONE
-            if ($phone) {
-                $cleanPhone = preg_replace('/\D/', '', $phone);
-                $fullPhone = preg_replace('/\D/', '', $ccphone . $phone);
-                $phoneUser = User::where(function ($q) use ($phone, $cleanPhone, $fullPhone) {
-                    $q->where('phone', $phone)
-                      ->orWhere('phone', $cleanPhone)
-                      ->orWhere('phone', $fullPhone);
-                })->first();
-
-                if ($phoneUser) {
-                    $hasCard = $entityId
-                        ? Card::where('user_id', $phoneUser->id)->where('entity_id', $entityId)->exists()
-                        : Card::where('user_id', $phoneUser->id)->exists();
-
-                    if ($hasCard) {
-                        return response()->json([
-                            'message' => 'Ce numéro de téléphone appartient déjà à un autre compte. Veuillez vous connecter ou utiliser un autre numéro.',
-                            'errors' => [
-                                'phone' => ['Ce numéro de téléphone appartient déjà à un autre compte.']
-                            ]
-                        ], 422);
-                    }
-                }
-            }
-
-            // 2. Vérifier si un utilisateur existe déjà spécifiquement par E-MAIL
-            if (!empty($email)) {
-                $emailUser = User::whereRaw('LOWER(email) = ?', [$email])->first();
-                if ($emailUser) {
-                    $hasCard = $entityId
-                        ? Card::where('user_id', $emailUser->id)->where('entity_id', $entityId)->exists()
-                        : Card::where('user_id', $emailUser->id)->exists();
-
-                    if ($hasCard) {
-                        return response()->json([
-                            'message' => 'Cette adresse e-mail appartient déjà à un autre compte. Veuillez vous connecter ou utiliser un autre e-mail.',
-                            'errors' => [
-                                'email' => ['Cette adresse e-mail appartient déjà à un autre compte.']
-                            ]
-                        ], 422);
-                    }
-                }
+            $conflicts = $this->collectRegistrationConflicts($email, $ccphone, $phone);
+            if (!empty($conflicts)) {
+                return $this->registrationConflictResponse($conflicts, $email, $ccphone, $phone);
             }
 
             $validator = Validator::make($request->all(), [
                 'name' => 'required|string|max:255',
-                'email' => 'required|email',
-                'ccphone' => 'nullable|string|max:10',
-                'phone' => 'nullable|string|max:30',
+                'email' => 'nullable|email',
+                'ccphone' => 'required|string|max:10',
+                'phone' => 'required|string|max:30',
             ]);
 
             if ($validator->fails()) {
@@ -212,38 +229,71 @@ class AuthController extends Controller
 
             $email = mb_strtolower(trim((string) $request->input('email')));
             $otp = (string) random_int(100000, 999999);
-            $cacheKey = 'client_register_otp:' . $email;
+            $cacheKey = $this->registrationOtpCacheKey($email, $request->input('ccphone', '+221'), $request->input('phone'));
 
             Cache::put($cacheKey, [
                 'name' => trim((string) $request->input('name')),
-                'email' => $email,
+                'email' => $email !== '' ? $email : null,
                 'ccphone' => $this->normalizeOptionalString($request->input('ccphone')),
                 'phone' => $this->normalizeOptionalString($request->input('phone')),
                 'otp' => $otp,
             ], now()->addMinutes(15));
 
+            if ($email !== '') {
+                try {
+                    Mail::raw(
+                        "Votre code OTP d'inscription est : {$otp}\nCe code expire dans 15 minutes.",
+                        function ($message) use ($email, $request) {
+                            $message->to($email)->subject("Code OTP d'inscription");
+                            app(ShopMailFromResolver::class)->applyTo(function (string $address, string $name) use ($message) {
+                                $message->from($address, $name);
+                            }, null, $request);
+                        }
+                    );
+                } catch (\Throwable $mailError) {
+                    Log::warning('[AuthController@requestClientRegistrationOtp] Mail send failed', [
+                        'message' => $mailError->getMessage(),
+                    ]);
+                    Cache::forget($cacheKey);
+
+                    return response()->json([
+                        'message' => "Impossible d'envoyer le code OTP par email",
+                    ], 500);
+                }
+            }
+
             try {
-                Mail::raw(
-                    "Votre code OTP d'inscription est : {$otp}\nCe code expire dans 15 minutes.",
-                    function ($message) use ($email, $request) {
-                        $message->to($email)->subject("Code OTP d'inscription");
-                        app(ShopMailFromResolver::class)->applyTo(function (string $address, string $name) use ($message) {
-                            $message->from($address, $name);
-                        }, null, $request);
-                    }
-                );
-            } catch (\Throwable $mailError) {
-                Log::warning('[AuthController@requestClientRegistrationOtp] Mail send failed', [
-                    'message' => $mailError->getMessage(),
+                $fullPhone = $this->buildPhoneValue($ccphone, $phone);
+                if (!$fullPhone) {
+                    throw new \RuntimeException('Numéro de téléphone invalide');
+                }
+
+                $pubKey = env('DIOTKO_SMS_PUBLIC_KEY');
+                $secKey = env('DIOTKO_SMS_SECRET_KEY');
+                if (!$pubKey || !$secKey) {
+                    throw new \RuntimeException('Clés API Diotko SMS non configurées');
+                }
+
+                $smsService = new \App\Services\NotificationsService($pubKey, $secKey);
+                $smsResult = $smsService->sendSmsNow([$fullPhone], "Votre code OTP d'inscription est : {$otp}");
+
+                if (!($smsResult['success'] ?? false)) {
+                    throw new \RuntimeException($smsResult['message'] ?? 'Erreur lors de l\'envoi du SMS');
+                }
+            } catch (\Throwable $smsError) {
+                Log::warning('[AuthController@requestClientRegistrationOtp] SMS send failed', [
+                    'message' => $smsError->getMessage(),
                 ]);
                 Cache::forget($cacheKey);
 
                 return response()->json([
-                    'message' => "Impossible d'envoyer le code OTP par email",
+                    'message' => "Impossible d'envoyer le code OTP par SMS",
                 ], 500);
             }
 
-            return response()->json(['message' => 'Code OTP envoyé par email']);
+            return response()->json([
+                'message' => $email !== '' ? 'Code OTP envoyé par email et par SMS' : 'Code OTP envoyé par SMS',
+            ]);
         } catch (\Exception $e) {
             Log::error('[AuthController@requestClientRegistrationOtp] Error', ['message' => $e->getMessage()]);
             return response()->json(['message' => 'Erreur lors de l\'envoi du code OTP'], 500);
@@ -257,7 +307,7 @@ class AuthController extends Controller
         try {
             $validator = Validator::make($request->all(), [
                 'name' => 'required|string|max:255',
-                'email' => 'required|email',
+                'email' => 'nullable|email',
                 'ccphone' => 'nullable|string|max:10',
                 'phone' => 'nullable|string|max:30',
                 'otp' => 'required|string|size:6',
@@ -271,7 +321,7 @@ class AuthController extends Controller
             }
 
             $email = mb_strtolower(trim((string) $request->input('email')));
-            $cacheKey = 'client_register_otp:' . $email;
+            $cacheKey = $this->registrationOtpCacheKey($email, $request->input('ccphone', '+221'), $request->input('phone'));
             $pending = Cache::get($cacheKey);
 
             if (!$pending || !is_array($pending)) {
@@ -312,9 +362,9 @@ class AuthController extends Controller
         try {
             $validator = Validator::make($request->all(), [
                 'name' => 'required|string|max:255',
-                'email' => 'required|email',
-                'ccphone' => 'nullable|string|max:10',
-                'phone' => 'nullable|string|max:30',
+                'email' => 'nullable|email',
+                'ccphone' => 'required|string|max:10',
+                'phone' => 'required|string|max:30',
                 'otp' => 'required|string|size:6',
                 'password' => 'required|string|min:8|confirmed',
             ]);
@@ -327,7 +377,7 @@ class AuthController extends Controller
             }
 
             $email = mb_strtolower(trim((string) $request->input('email')));
-            $cacheKey = 'client_register_otp:' . $email;
+            $cacheKey = $this->registrationOtpCacheKey($email, $request->input('ccphone', '+221'), $request->input('phone'));
             $pending = Cache::get($cacheKey);
 
             if (!$pending || !is_array($pending)) {
@@ -341,6 +391,7 @@ class AuthController extends Controller
             $requestName = trim((string) $request->input('name'));
             $requestCcphone = $this->normalizeOptionalString($request->input('ccphone'));
             $requestPhone = $this->normalizeOptionalString($request->input('phone'));
+            $requestPhoneValue = $this->buildPhoneValue($requestCcphone, $requestPhone);
 
             if (
                 trim((string) ($pending['name'] ?? '')) !== $requestName ||
@@ -351,18 +402,18 @@ class AuthController extends Controller
                 return response()->json(['message' => 'Les données d\'inscription ont changé. Recommencez le processus.'], 400);
             }
 
-            if (User::whereRaw('LOWER(email) = ?', [$email])->exists()) {
-                return response()->json(['message' => 'Cet email est déjà utilisé'], 422);
+            $conflicts = $this->collectRegistrationConflicts($email, $requestCcphone, $requestPhone);
+            if (!empty($conflicts)) {
+                return $this->registrationConflictResponse($conflicts, $email, $requestCcphone, $requestPhone);
             }
 
             $user = User::create([
                 'name' => $requestName,
-                'email' => $email,
+                'email' => $email !== '' ? $email : null,
                 'password' => Hash::make($request->input('password')),
-                'phone' => $this->buildPhoneValue($requestCcphone, $requestPhone),
+                'phone' => $requestPhoneValue,
             ]);
 
-            // Création automatique de la carte virtuelle si rattaché à une boutique
             $entityId = $request->attributes->get('current_entity_id') ?? $request->input('entity_id');
             if ($entityId) {
                 Card::create([
@@ -1012,4 +1063,3 @@ class AuthController extends Controller
         }
     }
 }
-
