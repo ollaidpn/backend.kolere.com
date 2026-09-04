@@ -346,8 +346,6 @@ Route::prefix('client')->middleware(['auth:sanctum', 'role:client', 'resolve.ent
 });
 
 // ─── FCM Push Tokens ────────────────────────────────────────────────────────
-Route::middleware(['auth:sanctum'])->group(function () {
-    Route::post('/fcm/save-token', [\App\Http\Controllers\Api\FirebaseTokenController::class, 'store']);
-    Route::post('/fcm/check-token', [\App\Http\Controllers\Api\FirebaseTokenController::class, 'check']);
-    Route::post('/fcm/deactivate-token', [\App\Http\Controllers\Api\FirebaseTokenController::class, 'destroy']);
-});
+Route::post('/fcm/save-token', [\App\Http\Controllers\Api\FirebaseTokenController::class, 'store']);
+Route::post('/fcm/check-token', [\App\Http\Controllers\Api\FirebaseTokenController::class, 'check']);
+Route::post('/fcm/deactivate-token', [\App\Http\Controllers\Api\FirebaseTokenController::class, 'destroy']);
