@@ -23,12 +23,15 @@ class Entity extends Model
         'primary_color',
         'secondary_color',
         'web_slider',
+        'web_features',
         'address',
         'town',
         'country',
         'email',
         'ccphone',
         'phone',
+        'ccphone2',
+        'phone2',
         'delivery_zones',
         'diotko_public_key',
         'diotko_secret_key',
@@ -46,6 +49,7 @@ class Entity extends Model
 
     protected $casts = [
         'web_slider' => 'array',
+        'web_features' => 'array',
         'delivery_zones' => 'array',
     ];
 

@@ -59,9 +59,11 @@ Route::prefix('auth')->middleware(['resolve.entity'])->group(function () {
     Route::post('/client/forgot/request-otp', [AuthController::class, 'requestClientPasswordResetOtp']);
     Route::post('/client/forgot/verify-otp', [AuthController::class, 'verifyClientPasswordResetOtp']);
     Route::post('/client/forgot/reset', [AuthController::class, 'resetClientPassword']);
+    Route::post('/phone/check-accounts', [AuthController::class, 'checkPhoneAccounts']);
     Route::post('/phone/request-otp', [AuthController::class, 'requestPhoneOtp']);
     Route::post('/phone/verify-otp', [AuthController::class, 'verifyPhoneOtp']);
     Route::post('/phone/select-account', [AuthController::class, 'selectPhoneAccount']);
+    Route::post('/email/check-accounts', [AuthController::class, 'checkEmailAccounts']);
     Route::post('/backoffice/login', [AuthController::class, 'loginManager']);
 
     Route::post('/admin/login', [AuthController::class, 'loginAdmin']);
@@ -161,6 +163,7 @@ Route::prefix('backoffice')->middleware(['auth:sanctum', 'role:manager', 'resolv
     });
     Route::put('/me/profile', [AuthController::class, 'updateManagerProfile']);
     Route::put('/me/password', [AuthController::class, 'updateManagerPassword']);
+    Route::post('/check-password', [AuthController::class, 'checkPassword']);
 
 
     // Invitations managers

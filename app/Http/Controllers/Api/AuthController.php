@@ -620,7 +620,9 @@ class AuthController extends Controller
                 'entity_reference' => 'nullable|string|max:255',
             ]);
 
-            $manager = Manager::where('email', $request->email)->first();
+            $manager = Manager::where('email', $request->email)
+                ->where('status', 'active')
+                ->first();
 
             if (!$manager || !Hash::check($request->password, $manager->password)) {
                 Log::warning('[AuthController@loginManager] Invalid credentials', ['email' => $request->email]);
@@ -704,6 +706,7 @@ class AuthController extends Controller
         try {
             $validator = Validator::make($request->all(), [
                 'email' => 'required|email',
+                'account_type' => 'nullable|string|in:manager,client',
             ]);
 
             if ($validator->fails()) {
@@ -714,22 +717,40 @@ class AuthController extends Controller
             }
 
             $email = mb_strtolower(trim((string) $request->input('email')));
-            $user = User::whereRaw('LOWER(email) = ?', [$email])->first();
+            $accountType = $request->input('account_type', 'client');
 
-            if (!$user) {
+            if ($accountType === 'manager') {
+                $targetUser = Manager::whereRaw('LOWER(email) = ?', [$email])
+                    ->where('status', 'active')
+                    ->first();
+                $cachePrefix = 'manager_reset_otp:';
+            } else {
+                $targetUser = User::whereRaw('LOWER(email) = ?', [$email])->first();
+                if (!$targetUser) {
+                    // Fallback to Manager if not specified
+                    $targetUser = Manager::whereRaw('LOWER(email) = ?', [$email])
+                        ->where('status', 'active')
+                        ->first();
+                    $cachePrefix = 'manager_reset_otp:';
+                } else {
+                    $cachePrefix = 'client_reset_otp:';
+                }
+            }
+
+            if (!$targetUser) {
                 return response()->json(['message' => 'Si le compte existe, un code OTP a été envoyé par email.']);
             }
 
             $otp = (string) random_int(100000, 999999);
-            $cacheKey = 'client_reset_otp:' . $user->id;
+            $cacheKey = $cachePrefix . $targetUser->id;
 
             Cache::put($cacheKey, $otp, now()->addMinutes(10));
 
             try {
                 Mail::raw(
                     "Votre code OTP de réinitialisation est : {$otp}\nCe code expire dans 10 minutes.",
-                    function ($message) use ($user, $request) {
-                        $message->to($user->email)->subject('Code OTP de réinitialisation');
+                    function ($message) use ($targetUser, $request) {
+                        $message->to($targetUser->email)->subject('Code OTP de réinitialisation');
                         app(ShopMailFromResolver::class)->applyTo(function (string $address, string $name) use ($message) {
                             $message->from($address, $name);
                         }, null, $request);
@@ -759,6 +780,7 @@ class AuthController extends Controller
             $validator = Validator::make($request->all(), [
                 'email' => 'required|email',
                 'otp' => 'required|string|size:6',
+                'account_type' => 'nullable|string|in:manager,client',
             ]);
 
             if ($validator->fails()) {
@@ -769,13 +791,30 @@ class AuthController extends Controller
             }
 
             $email = mb_strtolower(trim((string) $request->input('email')));
-            $user = User::whereRaw('LOWER(email) = ?', [$email])->first();
+            $accountType = $request->input('account_type', 'client');
 
-            if (!$user) {
+            if ($accountType === 'manager') {
+                $targetUser = Manager::whereRaw('LOWER(email) = ?', [$email])
+                    ->where('status', 'active')
+                    ->first();
+                $cachePrefix = 'manager_reset_otp:';
+            } else {
+                $targetUser = User::whereRaw('LOWER(email) = ?', [$email])->first();
+                if (!$targetUser) {
+                    $targetUser = Manager::whereRaw('LOWER(email) = ?', [$email])
+                        ->where('status', 'active')
+                        ->first();
+                    $cachePrefix = 'manager_reset_otp:';
+                } else {
+                    $cachePrefix = 'client_reset_otp:';
+                }
+            }
+
+            if (!$targetUser) {
                 return response()->json(['message' => 'Code OTP invalide ou expiré'], 400);
             }
 
-            $cacheKey = 'client_reset_otp:' . $user->id;
+            $cacheKey = $cachePrefix . $targetUser->id;
             $storedOtp = Cache::get($cacheKey);
 
             if (!$storedOtp || !hash_equals((string) $storedOtp, (string) $request->input('otp'))) {
@@ -799,6 +838,7 @@ class AuthController extends Controller
                 'email' => 'required|email',
                 'otp' => 'required|string|size:6',
                 'password' => 'required|string|min:8|confirmed',
+                'account_type' => 'nullable|string|in:manager,client',
             ]);
 
             if ($validator->fails()) {
@@ -809,24 +849,41 @@ class AuthController extends Controller
             }
 
             $email = mb_strtolower(trim((string) $request->input('email')));
-            $user = User::whereRaw('LOWER(email) = ?', [$email])->first();
+            $accountType = $request->input('account_type', 'client');
 
-            if (!$user) {
+            if ($accountType === 'manager') {
+                $targetUser = Manager::whereRaw('LOWER(email) = ?', [$email])
+                    ->where('status', 'active')
+                    ->first();
+                $cachePrefix = 'manager_reset_otp:';
+            } else {
+                $targetUser = User::whereRaw('LOWER(email) = ?', [$email])->first();
+                if (!$targetUser) {
+                    $targetUser = Manager::whereRaw('LOWER(email) = ?', [$email])
+                        ->where('status', 'active')
+                        ->first();
+                    $cachePrefix = 'manager_reset_otp:';
+                } else {
+                    $cachePrefix = 'client_reset_otp:';
+                }
+            }
+
+            if (!$targetUser) {
                 return response()->json(['message' => 'Code OTP invalide ou expiré'], 400);
             }
 
-            $cacheKey = 'client_reset_otp:' . $user->id;
+            $cacheKey = $cachePrefix . $targetUser->id;
             $storedOtp = Cache::get($cacheKey);
 
             if (!$storedOtp || !hash_equals((string) $storedOtp, (string) $request->input('otp'))) {
                 return response()->json(['message' => 'Code OTP invalide ou expiré'], 400);
             }
 
-            $user->update([
+            $targetUser->update([
                 'password' => Hash::make($request->input('password')),
             ]);
 
-            $user->tokens()->delete();
+            $targetUser->tokens()->delete();
             Cache::forget($cacheKey);
 
             return response()->json(['message' => 'Mot de passe réinitialisé avec succès']);
@@ -836,7 +893,7 @@ class AuthController extends Controller
         }
     }
 
-    public function requestPhoneOtp(Request $request): JsonResponse
+    public function checkPhoneAccounts(Request $request): JsonResponse
     {
         try {
             $validator = Validator::make($request->all(), [
@@ -853,12 +910,103 @@ class AuthController extends Controller
 
             $ccphone = trim((string) $request->input('ccphone', '+221'));
             $rawPhone = trim((string) $request->input('phone'));
+            $cleanDigits = preg_replace('/\D/', '', $rawPhone);
+            $fullPhone = $ccphone . $cleanDigits;
+
+            $manager = Manager::where('status', 'active')
+                ->where(function ($query) use ($cleanDigits, $fullPhone) {
+                    $query->where('phone', 'LIKE', "%{$cleanDigits}")
+                        ->orWhere('phone', $fullPhone);
+                })
+                ->first();
+
+            $user = User::where('phone', 'LIKE', "%{$cleanDigits}")
+                ->orWhere('phone', $fullPhone)
+                ->first();
+
+            if (!$manager && !$user) {
+                return response()->json(['message' => 'Aucun compte associé à ce numéro de téléphone.'], 404);
+            }
+
+            $name = $manager?->name ?? $user?->name ?? 'Utilisateur';
+
+            return response()->json([
+                'status' => 'success',
+                'has_manager' => (bool) $manager,
+                'has_user' => (bool) $user,
+                'multiple_accounts' => (bool) ($manager && $user),
+                'name' => $name,
+            ]);
+        } catch (\Exception $e) {
+            Log::error('[AuthController@checkPhoneAccounts] Error', ['message' => $e->getMessage()]);
+            return response()->json(['message' => 'Erreur lors de la vérification du numéro.'], 500);
+        }
+    }
+
+    public function checkEmailAccounts(Request $request): JsonResponse
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'email' => 'required|email',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json(['message' => 'Email invalide', 'errors' => $validator->errors()], 422);
+            }
+
+            $email = mb_strtolower(trim((string) $request->input('email')));
+            $manager = Manager::whereRaw('LOWER(email) = ?', [$email])
+                ->where('status', 'active')
+                ->first();
+            $user = User::whereRaw('LOWER(email) = ?', [$email])->first();
+
+            if (!$manager && !$user) {
+                return response()->json(['message' => 'Aucun compte associé à cette adresse email.'], 404);
+            }
+
+            $name = $manager?->name ?? $user?->name ?? 'Utilisateur';
+
+            return response()->json([
+                'status' => 'success',
+                'has_manager' => (bool) $manager,
+                'has_user' => (bool) $user,
+                'multiple_accounts' => (bool) ($manager && $user),
+                'name' => $name,
+            ]);
+        } catch (\Exception $e) {
+            Log::error('[AuthController@checkEmailAccounts] Error', ['message' => $e->getMessage()]);
+            return response()->json(['message' => 'Erreur lors de la vérification de l\'email.'], 500);
+        }
+    }
+
+    public function requestPhoneOtp(Request $request): JsonResponse
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'ccphone' => 'required|string',
+                'phone' => 'required|string|min:9|max:9',
+                'target_space' => 'nullable|in:manager,client',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'message' => 'Le numéro de téléphone doit comporter exactement 9 chiffres.',
+                    'errors' => $validator->errors(),
+                ], 422);
+            }
+
+            $ccphone = trim((string) $request->input('ccphone', '+221'));
+            $rawPhone = trim((string) $request->input('phone'));
             $fullPhone = $ccphone . preg_replace('/^\+221/', '', $rawPhone);
             $cleanDigits = preg_replace('/\D/', '', $rawPhone);
+            $targetSpace = $request->input('target_space');
 
             // Vérifier existence dans Manager & User
-            $hasManager = Manager::where('phone', 'LIKE', "%{$cleanDigits}")
-                ->orWhere('phone', $fullPhone)
+            $hasManager = Manager::where('status', 'active')
+                ->where(function ($query) use ($cleanDigits, $fullPhone) {
+                    $query->where('phone', 'LIKE', "%{$cleanDigits}")
+                        ->orWhere('phone', $fullPhone);
+                })
                 ->exists();
 
             $hasUser = User::where('phone', 'LIKE', "%{$cleanDigits}")
@@ -867,6 +1015,25 @@ class AuthController extends Controller
 
             if (!$hasManager && !$hasUser) {
                 return response()->json(['message' => 'Aucun compte associé à ce numéro de téléphone.'], 404);
+            }
+
+            if ($hasManager && $hasUser && !$targetSpace) {
+                $name = Manager::where('status', 'active')
+                    ->where(function ($query) use ($cleanDigits, $fullPhone) {
+                        $query->where('phone', 'LIKE', "%{$cleanDigits}")
+                            ->orWhere('phone', $fullPhone);
+                    })
+                    ->value('name')
+                    ?? User::where('phone', 'LIKE', "%{$cleanDigits}")->orWhere('phone', $fullPhone)->value('name')
+                    ?? 'Utilisateur';
+
+                return response()->json([
+                    'status' => 'multiple_accounts',
+                    'message' => 'Deux espaces existent pour ce numéro.',
+                    'name' => $name,
+                    'has_manager' => true,
+                    'has_user' => true,
+                ]);
             }
 
             $otp = (string) random_int(100000, 999999);
@@ -973,8 +1140,11 @@ class AuthController extends Controller
     private function authenticatePhoneUser(string $cleanDigits, string $fullPhone, string $role): JsonResponse
     {
         if ($role === 'manager') {
-            $manager = Manager::where('phone', 'LIKE', "%{$cleanDigits}")
-                ->orWhere('phone', $fullPhone)
+            $manager = Manager::where('status', 'active')
+                ->where(function ($query) use ($cleanDigits, $fullPhone) {
+                    $query->where('phone', 'LIKE', "%{$cleanDigits}")
+                        ->orWhere('phone', $fullPhone);
+                })
                 ->first();
 
             if (!$manager) {
@@ -1060,6 +1230,26 @@ class AuthController extends Controller
         } catch (\Exception $e) {
             Log::error('[AuthController@updateManagerPassword] Error', ['message' => $e->getMessage()]);
             return response()->json(['message' => 'Erreur de mise à jour'], 500);
+        }
+    }
+
+    public function checkPassword(Request $request): JsonResponse
+    {
+        try {
+            $user = $request->user();
+            if (!$user) {
+                return response()->json(['message' => 'Non authentifié'], 401);
+            }
+
+            $password = $request->input('password');
+            if (!$password || !Hash::check($password, $user->password)) {
+                return response()->json(['valid' => false, 'message' => 'Mot de passe incorrect'], 400);
+            }
+
+            return response()->json(['valid' => true, 'message' => 'Mot de passe correct']);
+        } catch (\Exception $e) {
+            Log::error('[AuthController@checkPassword] Error', ['message' => $e->getMessage()]);
+            return response()->json(['message' => 'Erreur serveur'], 500);
         }
     }
 }

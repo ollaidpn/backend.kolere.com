@@ -93,6 +93,12 @@ class DatabaseSeeder extends Seeder
                         'image' => 'https://images.unsplash.com/photo-1587854692152-cbe660dbde88?auto=format&fit=crop&w=1200&q=80',
                     ],
                 ],
+                'web_features'    => [
+                    ['icon' => 'Truck', 'title' => 'Livraison Rapide', 'description' => 'Partout au Sénégal'],
+                    ['icon' => 'CreditCard', 'title' => 'Paiement Sécurisé', 'description' => 'Wave, OM & Cash'],
+                    ['icon' => 'ShieldCheck', 'title' => 'Qualité Garantie', 'description' => 'Produits 100% vérifiés'],
+                    ['icon' => 'Headphones', 'title' => 'Support Client', 'description' => 'À votre écoute 7j/7'],
+                ],
                 'address'         => '12 Rue Carnot',
                 'town'            => 'Dakar',
                 'country'         => 'Sénégal',

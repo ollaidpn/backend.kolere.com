@@ -78,7 +78,11 @@ class ClientProfileController extends Controller
                     'entity' => $profileData->card->entity ? [
                         'name' => $profileData->card->entity->name,
                         'logo' => $profileData->card->entity->logo,
-                        'logo_url' => $profileData->card->entity->logo_url ?? $profileData->card->entity->logo,
+                        'logo_url' => $profileData->card->entity->logo
+                            ? (str_starts_with($profileData->card->entity->logo, 'http')
+                                ? $profileData->card->entity->logo
+                                : $fileService->getUrl($profileData->card->entity->logo))
+                            : null,
                         'primary_color' => $profileData->card->entity->primary_color ?? '#0f172a',
                         'secondary_color' => $profileData->card->entity->secondary_color ?? '#f8fafc',
                         'address' => $profileData->card->entity->address,

@@ -97,6 +97,34 @@ class EntityController extends Controller
         return $this->normalizeWebSlider($decoded);
     }
 
+    private function normalizeWebFeatures(mixed $value): ?array
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        if (is_array($value)) {
+            return array_values(array_map(function ($item) {
+                return [
+                    'icon' => trim((string) ($item['icon'] ?? 'Truck')),
+                    'title' => trim((string) ($item['title'] ?? '')),
+                    'description' => trim((string) ($item['description'] ?? '')),
+                ];
+            }, $value));
+        }
+
+        if (!is_string($value)) {
+            return null;
+        }
+
+        $decoded = json_decode($value, true);
+        if (!is_array($decoded)) {
+            return null;
+        }
+
+        return $this->normalizeWebFeatures($decoded);
+    }
+
     public function index(Request $request): JsonResponse
     {
         Log::info('[EntityController@index] Fetching entities list');
@@ -127,6 +155,7 @@ class EntityController extends Controller
                 'primary_color'   => 'nullable|string|max:20',
                 'secondary_color' => 'nullable|string|max:20',
                 'web_slider'      => 'nullable',
+                'web_features'    => 'nullable',
                 'address'         => 'nullable|string|max:255',
                 'town'            => 'nullable|string|max:255',
                 'country'         => 'nullable|string|max:255',
@@ -149,6 +178,10 @@ class EntityController extends Controller
             $webSlider = $this->normalizeWebSlider($request->input('web_slider'));
             if ($webSlider !== null) {
                 $data['web_slider'] = $webSlider;
+            }
+            $webFeatures = $this->normalizeWebFeatures($request->input('web_features'));
+            if ($webFeatures !== null) {
+                $data['web_features'] = $webFeatures;
             }
 
             $entity = Entity::create($data);
@@ -248,6 +281,7 @@ class EntityController extends Controller
                 'primary_color'   => 'nullable|string|max:20',
                 'secondary_color' => 'nullable|string|max:20',
                 'web_slider'      => 'nullable',
+                'web_features'    => 'nullable',
                 'address'         => 'nullable|string|max:255',
                 'town'            => 'nullable|string|max:255',
                 'country'         => 'nullable|string|max:255',
@@ -265,6 +299,10 @@ class EntityController extends Controller
             $webSlider = $this->normalizeWebSlider($request->input('web_slider'));
             if ($webSlider !== null) {
                 $data['web_slider'] = $webSlider;
+            }
+            $webFeatures = $this->normalizeWebFeatures($request->input('web_features'));
+            if ($webFeatures !== null) {
+                $data['web_features'] = $webFeatures;
             }
 
             $entity->update($data);
@@ -337,12 +375,15 @@ class EntityController extends Controller
                     'primary_color' => $entity->primary_color,
                     'secondary_color' => $entity->secondary_color,
                     'web_slider' => $entity->web_slider,
+                    'web_features' => $entity->web_features,
                     'address' => $entity->address,
                     'town' => $entity->town,
                     'country' => $entity->country,
                     'email' => $entity->email,
                     'ccphone' => $entity->ccphone,
                     'phone' => $entity->phone,
+                    'ccphone2' => $entity->ccphone2,
+                    'phone2' => $entity->phone2,
                     'wave_business_id' => $entity->wave_business_id,
                     'wave_business_status' => (bool) $entity->wave_business_status,
                     'fayko_status' => (bool) $entity->fayko_status,

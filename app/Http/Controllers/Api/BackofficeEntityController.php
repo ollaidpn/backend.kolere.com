@@ -112,6 +112,34 @@ class BackofficeEntityController extends Controller
         return $this->normalizeWebSlider($decoded);
     }
 
+    private function normalizeWebFeatures(mixed $value): ?array
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        if (is_array($value)) {
+            return array_values(array_map(function ($item) {
+                return [
+                    'icon' => trim((string) ($item['icon'] ?? 'Truck')),
+                    'title' => trim((string) ($item['title'] ?? '')),
+                    'description' => trim((string) ($item['description'] ?? '')),
+                ];
+            }, $value));
+        }
+
+        if (!is_string($value)) {
+            return null;
+        }
+
+        $decoded = json_decode($value, true);
+        if (!is_array($decoded)) {
+            return null;
+        }
+
+        return $this->normalizeWebFeatures($decoded);
+    }
+
     private function normalizeDeliveryZones(mixed $value): ?array
     {
         if ($value === null || $value === '') {
@@ -199,7 +227,10 @@ class BackofficeEntityController extends Controller
                 'email'   => 'nullable|email|max:255',
                 'phone'   => 'nullable|string|max:20',
                 'ccphone' => 'nullable|string|max:10',
+                'phone2'   => 'nullable|string|max:20',
+                'ccphone2' => 'nullable|string|max:10',
                 'web_slider' => 'nullable',
+                'web_features' => 'nullable',
                 'delivery_zones' => 'nullable',
                 'fayko_public_key' => 'nullable|string|max:255',
                 'fayko_secret_key' => 'nullable|string|max:255',
@@ -210,17 +241,19 @@ class BackofficeEntityController extends Controller
             ]);
 
             $data = $request->only([
-                'name', 'primary_color', 'secondary_color', 'address', 'town', 'country', 'email', 'phone', 'ccphone',
+                'name', 'primary_color', 'secondary_color', 'address', 'town', 'country', 'email', 'phone', 'ccphone', 'phone2', 'ccphone2',
                 'fayko_public_key', 'fayko_secret_key', 'fayko_webhook_key', 'fayko_mode',
                 'diotko_public_key', 'diotko_secret_key',
             ]);
 
-
-
-            
             $webSlider = $this->normalizeWebSlider($request->input('web_slider'));
             if ($webSlider !== null) {
                 $data['web_slider'] = $webSlider;
+            }
+
+            $webFeatures = $this->normalizeWebFeatures($request->input('web_features'));
+            if ($webFeatures !== null) {
+                $data['web_features'] = $webFeatures;
             }
 
             $deliveryZones = $this->normalizeDeliveryZones($request->input('delivery_zones'));
