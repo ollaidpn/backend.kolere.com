@@ -50,7 +50,7 @@ class RewardController extends Controller
                 'points_required' => 'required|integer|min:1',
                 'value' => 'required|integer|min:0',
                 'stock' => 'nullable|integer|min:0',
-                'status' => 'nullable|string|in:instock,outstock,draft,active,inactive',
+                'status' => 'nullable|string|in:instock,outstock,draft',
                 'images.*' => 'nullable|file|mimes:jpg,jpeg,png,svg,webp|max:5120',
             ]);
 
@@ -98,7 +98,7 @@ class RewardController extends Controller
                 'points_required' => 'required|integer|min:1',
                 'value' => 'required|integer|min:0',
                 'stock' => 'nullable|integer|min:0',
-                'status' => 'nullable|string|in:instock,outstock,draft,active,inactive',
+                'status' => 'nullable|string|in:instock,outstock,draft',
                 'images.*' => 'nullable|file|mimes:jpg,jpeg,png,svg,webp|max:5120',
                 'keep_images' => 'nullable',
             ]);
@@ -162,7 +162,7 @@ class RewardController extends Controller
                 $query->where('entity_id', $entityId);
             }
             $reward = $query->firstOrFail();
-            $reward->status = $reward->status === 'active' ? 'inactive' : 'active';
+            $reward->status = $reward->status === 'instock' ? 'outstock' : 'instock';
             $reward->save();
 
             return response()->json(['message' => 'Statut mis à jour', 'data' => $reward]);
