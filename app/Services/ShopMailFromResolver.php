@@ -18,7 +18,7 @@ class ShopMailFromResolver
                 ->first() ?? Entity::query()->orderBy('id')->first();
         }
 
-        $address = $entity?->email ?: config('mail.from.address');
+        $address = config('mail.from.address', env('MAIL_FROM_ADDRESS', 'support@parakhadijaba.com'));
         $name = $entity?->name ?: config('mail.from.name');
 
         return [

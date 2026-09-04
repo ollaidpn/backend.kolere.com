@@ -11,6 +11,7 @@ use App\Services\FileUploadService;
 use App\Services\ShopMailFromResolver;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 
 class ClientController extends Controller
@@ -68,21 +69,116 @@ class ClientController extends Controller
         }
     }
 
+    private function findClientByIdOrRef($id, ?int $entityId = null): ?User
+    {
+        $query = User::with(['card.cardCredits', 'orders']);
+        if ($entityId) {
+            $query->whereHas('card', fn ($cq) => $cq->where('entity_id', $entityId));
+        }
+
+        if (is_numeric($id)) {
+            $client = (clone $query)->where('id', $id)->first();
+            if ($client) return $client;
+        }
+
+        $client = (clone $query)->whereHas('card', fn ($cq) => $cq->where('reference', $id))->first();
+        if ($client) return $client;
+
+        $cardQuery = Card::where('reference', $id);
+        if ($entityId) {
+            $cardQuery->where('entity_id', $entityId);
+        }
+        $cardObj = $cardQuery->first();
+        if ($cardObj && $cardObj->user_id) {
+            return User::with(['card.cardCredits', 'orders'])->find($cardObj->user_id);
+        }
+
+        return null;
+    }
+
     public function show($id): JsonResponse
     {
         try {
-            $query = User::with(['card.cardCredits', 'orders']);
-            if ($entityId = request()->attributes->get('current_entity_id')) {
-                $query->whereHas('card', fn ($cardQuery) => $cardQuery->where('entity_id', $entityId));
+            $entityId = $this->entityId(request());
+            
+            // 1. Chercher la carte par sa référence si $id n'est pas numérique
+            $cardObj = null;
+            if (!is_numeric($id)) {
+                $cardQuery = Card::with(['cardCredits', 'user']);
+                if ($entityId) {
+                    $cardQuery->where('entity_id', $entityId);
+                }
+                $cardObj = $cardQuery->where('reference', $id)->first();
             }
-            $client = $query->findOrFail($id);
+
+            // 2. Récupérer le client correspondant
+            $client = null;
+            if ($cardObj && $cardObj->user) {
+                $client = $cardObj->user;
+                $client->load('orders');
+            } else {
+                $query = User::with(['card.cardCredits', 'orders']);
+                if ($entityId) {
+                    $query->whereHas('card', fn ($cq) => $cq->where('entity_id', $entityId));
+                }
+                if (is_numeric($id)) {
+                    $client = $query->where('id', $id)->first();
+                } else {
+                    $client = $query->whereHas('card', fn ($cq) => $cq->where('reference', $id))->first();
+                }
+            }
+
+            if (!$client) {
+                return response()->json(['message' => 'Client non trouvé'], 404);
+            }
+
+            // 3. S'assurer que la carte associée dans les données de retour correspond bien à la carte demandée
+            if (!$cardObj) {
+                $cardQuery = Card::with('cardCredits')->where('user_id', $client->id);
+                if ($entityId) {
+                    $cardQuery->where('entity_id', $entityId);
+                }
+                $cardObj = $cardQuery->first();
+            }
 
             $data = $client->toArray();
-            $fileService = new FileUploadService();
+            if ($cardObj) {
+                $data['card'] = $cardObj->toArray();
+            }
+
+            // 4. Charger la fiche de santé liée à cette carte
+            $health = null;
+            if ($cardObj) {
+                $healthQuery = \App\Models\UserHealth::query();
+                if (Schema::hasColumn('user_health', 'card_id')) {
+                    $healthQuery->where('card_id', $cardObj->id);
+                } else {
+                    $healthQuery->where('user_id', $client->id);
+                }
+                $health = $healthQuery->first();
+            }
+            if (!$health) {
+                $health = \App\Models\UserHealth::where('user_id', $client->id)->first();
+            }
+            $data['health'] = $health;
+
             if ($client->avatar) {
-                $data['avatar_url'] = str_starts_with($client->avatar, 'http')
-                    ? $client->avatar
-                    : $fileService->getUrl($client->avatar);
+                if (str_starts_with($client->avatar, 'http')) {
+                    $data['avatar_url'] = $client->avatar;
+                } elseif (Schema::hasColumn('users', 'avatar')) {
+                    try {
+                        $fileService = new FileUploadService();
+                        $data['avatar_url'] = $fileService->getUrl($client->avatar);
+                    } catch (\Throwable $avatarError) {
+                        Log::warning('[ClientController@show] Avatar resolution fallback', [
+                            'id' => $id,
+                            'message' => $avatarError->getMessage(),
+                        ]);
+                        $data['avatar_url'] = $client->avatar;
+                    }
+                } else {
+                    $data['avatar_url'] = $client->avatar;
+                }
             } else {
                 $data['avatar_url'] = null;
             }
@@ -94,32 +190,221 @@ class ClientController extends Controller
         }
     }
 
+    public function updateHealth(Request $request, $id): JsonResponse
+    {
+        try {
+            $entityId = $this->entityId($request);
+            $client = $this->findClientByIdOrRef($id, $entityId);
+            if (!$client) {
+                return response()->json(['message' => 'Client non trouvé'], 404);
+            }
+            $user = $client;
+            $cardQuery = Card::where('user_id', $user->id);
+            if ($entityId) {
+                $cardQuery->where('entity_id', $entityId);
+            }
+            $cardObj = $cardQuery->first();
+
+            $validated = $request->validate([
+                'blood_type' => 'nullable|string|max:10',
+                'weight_kg' => 'nullable|numeric',
+                'height_cm' => 'nullable|integer',
+                'medical_history' => 'nullable|string',
+                'chronic_diseases' => 'nullable|string',
+                'current_treatments' => 'nullable|string',
+                'emergency_notes' => 'nullable|string',
+                'emergency_contact_name' => 'nullable|string',
+                'emergency_contact_phone' => 'nullable|string',
+                'emergency_contact_relation' => 'nullable|string',
+                'allergies' => 'nullable|array',
+            ]);
+
+            $health = null;
+            if ($cardObj) {
+                $healthQuery = \App\Models\UserHealth::query();
+                if (Schema::hasColumn('user_health', 'card_id')) {
+                    $healthQuery->where('card_id', $cardObj->id);
+                } else {
+                    $healthQuery->where('user_id', $user->id);
+                }
+                $health = $healthQuery->first();
+            }
+            if (!$health) {
+                $health = \App\Models\UserHealth::where('user_id', $user->id)->first();
+            }
+
+            if (!$health) {
+                $health = new \App\Models\UserHealth();
+                $health->user_id = $user->id;
+                if ($cardObj && Schema::hasColumn('user_health', 'card_id')) {
+                    $health->card_id = $cardObj->id;
+                }
+            }
+
+            if ($cardObj && Schema::hasColumn('user_health', 'card_id') && !$health->card_id) {
+                $health->card_id = $cardObj->id;
+            }
+
+            $health->fill($validated);
+            $health->save();
+
+            return response()->json([
+                'message' => 'Fiche de santé enregistrée',
+                'data' => $health,
+            ]);
+        } catch (\Exception $e) {
+            Log::error('[ClientController@updateHealth] Error', ['id' => $id, 'message' => $e->getMessage()]);
+            return response()->json(['message' => 'Erreur lors de l\'enregistrement de la santé : ' . $e->getMessage()], 500);
+        }
+    }
+
+    public function checkAvailability(Request $request): JsonResponse
+    {
+        try {
+            $type = $request->input('type'); // 'email' ou 'phone'
+            $value = $request->input('value');
+            $ccphone = $request->input('ccphone', '+221');
+            $entityId = $this->entityId($request);
+
+            if (!$entityId) {
+                return response()->json(['message' => 'Entité courante introuvable'], 422);
+            }
+
+            if ($type === 'email') {
+                if (!$value || !filter_var($value, FILTER_VALIDATE_EMAIL)) {
+                    return response()->json(['message' => 'Email invalide'], 422);
+                }
+                $existingUser = User::where('email', $value)->first();
+            } else {
+                if (!$value) {
+                    return response()->json(['message' => 'Numéro de téléphone obligatoire'], 422);
+                }
+                $cleanValue = preg_replace('/\D/', '', $value);
+                $existingUser = User::where(function ($q) use ($value, $cleanValue, $ccphone) {
+                    $q->where('phone', $value)
+                      ->orWhere('phone', $cleanValue);
+                    if ($ccphone) {
+                        $full = preg_replace('/\D/', '', $ccphone . $value);
+                        $q->orWhere('phone', $full);
+                    }
+                })->first();
+            }
+
+            if ($existingUser) {
+                // 1. Si le client est déjà lié à une carte de CETTE boutique
+                $hasCardInThisShop = Card::where('user_id', $existingUser->id)
+                    ->where('entity_id', $entityId)
+                    ->exists();
+
+                if ($hasCardInThisShop) {
+                    $fieldLabel = $type === 'email' ? "cette adresse e-mail" : "ce numéro de téléphone";
+                    return response()->json([
+                        'exists' => true,
+                        'has_card' => true,
+                        'message' => "Un utilisateur possède déjà {$fieldLabel} sur cette boutique. Veuillez choisir un autre " . ($type === 'email' ? 'e-mail' : 'numéro de téléphone') . ".",
+                        'user' => [
+                            'name' => $existingUser->name,
+                            'email' => $existingUser->email,
+                            'phone' => $existingUser->phone,
+                            'ccphone' => $existingUser->ccphone,
+                        ]
+                    ], 422);
+                }
+
+                // 2. Le client existe sur la plateforme globale mais n'a pas de carte sur CETTE boutique
+                return response()->json([
+                    'exists' => true,
+                    'has_card' => false,
+                    'message' => 'Client trouvé sur la plateforme. Une nouvelle carte pour votre boutique lui sera attribuée.',
+                    'user' => [
+                        'name' => $existingUser->name,
+                        'email' => $existingUser->email,
+                        'phone' => $existingUser->phone,
+                        'ccphone' => $existingUser->ccphone,
+                    ]
+                ]);
+            }
+
+            return response()->json([
+                'exists' => false,
+                'has_card' => false,
+                'message' => 'Nouveau client'
+            ]);
+        } catch (\Exception $e) {
+            Log::error('[ClientController@checkAvailability] Error', ['message' => $e->getMessage()]);
+            return response()->json(['message' => 'Erreur lors de la vérification'], 500);
+        }
+    }
+
     public function store(Request $request): JsonResponse
     {
         try {
             // Validation des entrées
             $validated = $request->validate([
                 'name' => 'required|string|max:255',
-                'email' => 'nullable|email|unique:users,email',
+                'email' => 'nullable|email',
+                'ccphone' => 'nullable|string|max:10',
                 'phone' => 'required|string|max:20',
                 'address' => 'nullable|string|max:500',
                 'password' => 'nullable|string|min:6',
                 'card_id' => 'nullable|exists:cards,id',
             ]);
 
-            // Créer le client (email par défaut si vide)
-            $dummyEmail = 'client_' . time() . '_' . rand(100, 999) . '@boutique.local';
-            $client = User::create([
-                'name' => $validated['name'],
-                'email' => $validated['email'] ?: $dummyEmail,
-                'phone' => $validated['phone'],
-                'address' => $validated['address'] ?? null,
-                'password' => $validated['password'] ? Hash::make($validated['password']) : Hash::make('password123'),
-            ]);
-
             $entityId = $this->entityId($request);
             if (!$entityId) {
                 return response()->json(['message' => 'Entité courante introuvable'], 422);
+            }
+
+            $ccphone = $validated['ccphone'] ?? '+221';
+            $phone = $validated['phone'];
+            $email = $validated['email'] ?? null;
+
+            // 1. Chercher si un utilisateur existe déjà soit par email (si renseigné) soit par (ccphone + phone)
+            $existingUser = User::where(function ($q) use ($ccphone, $phone, $email) {
+                $q->where(function ($phoneQ) use ($ccphone, $phone) {
+                    $phoneQ->where('phone', $phone);
+                    if ($ccphone) {
+                        $phoneQ->where('ccphone', $ccphone);
+                    }
+                });
+                if (!empty($email)) {
+                    $q->orWhere('email', $email);
+                }
+            })->first();
+
+            if ($existingUser) {
+                // Vérifier s'il a DÉJÀ une carte sur cette boutique (entity_id)
+                $hasCardInThisShop = Card::where('user_id', $existingUser->id)
+                    ->where('entity_id', $entityId)
+                    ->exists();
+
+                if ($hasCardInThisShop) {
+                    return response()->json([
+                        'message' => 'Ce client possède déjà un compte et une carte de fidélité active sur cette boutique.',
+                        'errors' => [
+                            'phone' => ['Ce client possède déjà une carte sur cette boutique.']
+                        ]
+                    ], 422);
+                }
+
+                // Le client existe sur la plateforme mais n'a pas encore de carte sur cette boutique => On réutilise cet utilisateur
+                $client = $existingUser;
+                // Mettre à jour les infos si fournies
+                $client->update(array_filter([
+                    'name' => $validated['name'] ?: $client->name,
+                    'address' => $validated['address'] ?: $client->address,
+                ]));
+            } else {
+                // Le client n'existe pas du tout => Création d'un nouvel utilisateur
+                $dummyEmail = 'client_' . time() . '_' . rand(100, 999) . '@boutique.local';
+                $client = User::create([
+                    'name' => $validated['name'],
+                    'email' => $email ?: $dummyEmail,
+                    'ccphone' => $ccphone,
+                    'phone' => $phone,
+                    'address' => $validated['address'] ?? null,
+                    'password' => $validated['password'] ? Hash::make($validated['password']) : Hash::make('password123'),
+                ]);
             }
             $entity = \App\Models\Entity::find($entityId);
 
@@ -141,8 +426,7 @@ class ClientController extends Controller
                         'user_id' => $client->id,
                         'entity_id' => $entityId,
                         'card_type_id' => 1,
-                        'number' => 'CARD-' . str_pad($client->id, 8, '0', STR_PAD_LEFT),
-                        'points' => 0,
+                        'credit' => 0,
                         'status' => 'active',
                     ]);
                 }
@@ -152,8 +436,7 @@ class ClientController extends Controller
                     'user_id' => $client->id,
                     'entity_id' => $entityId,
                     'card_type_id' => 1,
-                    'number' => 'CARD-' . str_pad($client->id, 8, '0', STR_PAD_LEFT),
-                    'points' => 0,
+                    'credit' => 0,
                     'status' => 'active',
                 ]);
             }
@@ -163,23 +446,18 @@ class ClientController extends Controller
 
 
             // 1. Envoi de l'Email de bienvenue (Automatique)
-            if ($client->email) {
+            if ($client->email && !str_contains($client->email, '@boutique.local')) {
                 try {
                     $subject = "Bienvenue chez {$shopName} ! 🎁";
-                    $body = "Bonjour {$client->name},\n\n"
-                        . "Votre compte client et votre carte de fidélité chez {$shopName} viennent d'être créés avec succès !\n"
-                        . "Référence de votre carte : {$cardRef}\n\n"
-                        . "Téléchargez l'application mobile {$shopName} pour suivre vos points et profiter de vos cadeaux !\n\n"
-                        . "À très bientôt,\nL'équipe {$shopName}";
-
-                    \Illuminate\Support\Facades\Mail::raw($body, function ($msg) use ($client, $subject, $entity, $shopName, $request) {
+                    Mail::send('emails.welcome_client', [
+                        'client' => $client,
+                        'shopName' => $shopName,
+                        'cardRef' => $cardRef,
+                    ], function ($msg) use ($client, $subject) {
                         $msg->to($client->email)->subject($subject);
-                        app(ShopMailFromResolver::class)->applyTo(function (string $address, string $name) use ($msg) {
-                            $msg->from($address, $name);
-                        }, $entity, $request);
                     });
-                } catch (\Throwable $mErr) {
-                    Log::error('[ClientController@store] Échec envoi email de bienvenue', ['error' => $mErr->getMessage()]);
+                } catch (\Throwable $mailErr) {
+                    Log::warning('[ClientController@store] Échec envoi email de bienvenue', ['error' => $mailErr->getMessage()]);
                 }
             }
 

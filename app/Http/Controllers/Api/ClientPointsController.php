@@ -96,7 +96,7 @@ class ClientPointsController extends Controller
             $card = $cardQuery->first();
             $points = $card ? ($card->credit ?? 0) : 0;
 
-            $rewardsQuery = Reward::where('status', 'active');
+            $rewardsQuery = Reward::whereIn('status', ['instock', 'active']);
             if ($entityId = $this->entityId($request)) {
                 $rewardsQuery->where('entity_id', $entityId);
             }
@@ -129,7 +129,7 @@ class ClientPointsController extends Controller
             }
             $card = $cardQuery->firstOrFail();
 
-            $rewardQuery = Reward::where('status', 'active');
+            $rewardQuery = Reward::whereIn('status', ['instock', 'active']);
             if ($entityId = $this->entityId($request)) {
                 $rewardQuery->where('entity_id', $entityId);
             }

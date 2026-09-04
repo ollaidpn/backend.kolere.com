@@ -46,9 +46,57 @@ class AuthController extends Controller
         Log::info('[AuthController@registerClient] Attempt', ['email' => $request->email]);
 
         try {
+            $email = mb_strtolower(trim((string) $request->input('email')));
+            $phone = $this->normalizeOptionalString($request->phone);
+            $ccphone = $request->input('ccphone', '+221');
+            $entityId = $request->attributes->get('current_entity_id') ?? $request->input('entity_id');
+
+            if ($phone) {
+                $cleanPhone = preg_replace('/\D/', '', $phone);
+                $fullPhone = preg_replace('/\D/', '', $ccphone . $phone);
+                $phoneUser = User::where(function ($q) use ($phone, $cleanPhone, $fullPhone) {
+                    $q->where('phone', $phone)
+                      ->orWhere('phone', $cleanPhone)
+                      ->orWhere('phone', $fullPhone);
+                })->first();
+
+                if ($phoneUser) {
+                    $hasCard = $entityId
+                        ? Card::where('user_id', $phoneUser->id)->where('entity_id', $entityId)->exists()
+                        : Card::where('user_id', $phoneUser->id)->exists();
+
+                    if ($hasCard) {
+                        return response()->json([
+                            'message' => 'Ce numéro de téléphone appartient déjà à un autre compte sur cette boutique. Veuillez vous connecter ou utiliser un autre numéro.',
+                            'errors' => [
+                                'phone' => ['Ce numéro de téléphone appartient déjà à un autre compte.']
+                            ]
+                        ], 422);
+                    }
+                }
+            }
+
+            if (!empty($email)) {
+                $emailUser = User::whereRaw('LOWER(email) = ?', [$email])->first();
+                if ($emailUser) {
+                    $hasCard = $entityId
+                        ? Card::where('user_id', $emailUser->id)->where('entity_id', $entityId)->exists()
+                        : Card::where('user_id', $emailUser->id)->exists();
+
+                    if ($hasCard) {
+                        return response()->json([
+                            'message' => 'Cette adresse e-mail appartient déjà à un autre compte sur cette boutique. Veuillez vous connecter ou utiliser un autre e-mail.',
+                            'errors' => [
+                                'email' => ['Cette adresse e-mail appartient déjà à un autre compte.']
+                            ]
+                        ], 422);
+                    }
+                }
+            }
+
             $validator = Validator::make($request->all(), [
                 'name' => 'required|string|max:255',
-                'email' => 'required|email|unique:users,email',
+                'email' => 'required|email',
                 'password' => 'required|string|min:8|confirmed',
                 'phone' => 'nullable|string|max:30',
                 'address' => 'nullable|string|max:255',
@@ -69,6 +117,17 @@ class AuthController extends Controller
                 'address' => $this->normalizeOptionalString($request->address),
             ]);
 
+            $entityId = $request->attributes->get('current_entity_id') ?? $request->input('entity_id');
+            if ($entityId) {
+                Card::create([
+                    'user_id' => $user->id,
+                    'entity_id' => $entityId,
+                    'card_type_id' => 1,
+                    'credit' => 0,
+                    'status' => 'active',
+                ]);
+            }
+
             $token = $user->createToken('client-token')->plainTextToken;
 
             return response()->json([
@@ -87,9 +146,59 @@ class AuthController extends Controller
         Log::info('[AuthController@requestClientRegistrationOtp] Attempt', ['email' => $request->email]);
 
         try {
+            $email = mb_strtolower(trim((string) $request->input('email')));
+            $phone = $this->normalizeOptionalString($request->phone);
+            $ccphone = $request->input('ccphone', '+221');
+            $entityId = $request->attributes->get('current_entity_id') ?? $request->input('entity_id');
+
+            // 1. Vérifier si un utilisateur existe déjà spécifiquement par TÉLÉPHONE
+            if ($phone) {
+                $cleanPhone = preg_replace('/\D/', '', $phone);
+                $fullPhone = preg_replace('/\D/', '', $ccphone . $phone);
+                $phoneUser = User::where(function ($q) use ($phone, $cleanPhone, $fullPhone) {
+                    $q->where('phone', $phone)
+                      ->orWhere('phone', $cleanPhone)
+                      ->orWhere('phone', $fullPhone);
+                })->first();
+
+                if ($phoneUser) {
+                    $hasCard = $entityId
+                        ? Card::where('user_id', $phoneUser->id)->where('entity_id', $entityId)->exists()
+                        : Card::where('user_id', $phoneUser->id)->exists();
+
+                    if ($hasCard) {
+                        return response()->json([
+                            'message' => 'Ce numéro de téléphone appartient déjà à un autre compte. Veuillez vous connecter ou utiliser un autre numéro.',
+                            'errors' => [
+                                'phone' => ['Ce numéro de téléphone appartient déjà à un autre compte.']
+                            ]
+                        ], 422);
+                    }
+                }
+            }
+
+            // 2. Vérifier si un utilisateur existe déjà spécifiquement par E-MAIL
+            if (!empty($email)) {
+                $emailUser = User::whereRaw('LOWER(email) = ?', [$email])->first();
+                if ($emailUser) {
+                    $hasCard = $entityId
+                        ? Card::where('user_id', $emailUser->id)->where('entity_id', $entityId)->exists()
+                        : Card::where('user_id', $emailUser->id)->exists();
+
+                    if ($hasCard) {
+                        return response()->json([
+                            'message' => 'Cette adresse e-mail appartient déjà à un autre compte. Veuillez vous connecter ou utiliser un autre e-mail.',
+                            'errors' => [
+                                'email' => ['Cette adresse e-mail appartient déjà à un autre compte.']
+                            ]
+                        ], 422);
+                    }
+                }
+            }
+
             $validator = Validator::make($request->all(), [
                 'name' => 'required|string|max:255',
-                'email' => 'required|email|unique:users,email',
+                'email' => 'required|email',
                 'ccphone' => 'nullable|string|max:10',
                 'phone' => 'nullable|string|max:30',
             ]);
@@ -127,6 +236,11 @@ class AuthController extends Controller
                 Log::warning('[AuthController@requestClientRegistrationOtp] Mail send failed', [
                     'message' => $mailError->getMessage(),
                 ]);
+                Cache::forget($cacheKey);
+
+                return response()->json([
+                    'message' => "Impossible d'envoyer le code OTP par email",
+                ], 500);
             }
 
             return response()->json(['message' => 'Code OTP envoyé par email']);
@@ -247,6 +361,18 @@ class AuthController extends Controller
                 'password' => Hash::make($request->input('password')),
                 'phone' => $this->buildPhoneValue($requestCcphone, $requestPhone),
             ]);
+
+            // Création automatique de la carte virtuelle si rattaché à une boutique
+            $entityId = $request->attributes->get('current_entity_id') ?? $request->input('entity_id');
+            if ($entityId) {
+                Card::create([
+                    'user_id' => $user->id,
+                    'entity_id' => $entityId,
+                    'card_type_id' => 1,
+                    'credit' => 0,
+                    'status' => 'active',
+                ]);
+            }
 
             Cache::forget($cacheKey);
 
@@ -562,12 +688,56 @@ class AuthController extends Controller
                 Log::warning('[AuthController@requestClientPasswordResetOtp] Mail send failed', [
                     'message' => $mailError->getMessage(),
                 ]);
+                Cache::forget($cacheKey);
+
+                return response()->json([
+                    'message' => "Impossible d'envoyer le code OTP par email",
+                ], 500);
             }
 
             return response()->json(['message' => 'Si le compte existe, un code OTP a été envoyé par email.']);
         } catch (\Exception $e) {
             Log::error('[AuthController@requestClientPasswordResetOtp] Error', ['message' => $e->getMessage()]);
             return response()->json(['message' => 'Erreur lors de l\'envoi du code OTP'], 500);
+        }
+    }
+
+    public function verifyClientPasswordResetOtp(Request $request): JsonResponse
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'email' => 'required|email',
+                'otp' => 'required|string|size:6',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'message' => 'Données invalides',
+                    'errors' => $validator->errors(),
+                ], 422);
+            }
+
+            $email = mb_strtolower(trim((string) $request->input('email')));
+            $user = User::whereRaw('LOWER(email) = ?', [$email])->first();
+
+            if (!$user) {
+                return response()->json(['message' => 'Code OTP invalide ou expiré'], 400);
+            }
+
+            $cacheKey = 'client_reset_otp:' . $user->id;
+            $storedOtp = Cache::get($cacheKey);
+
+            if (!$storedOtp || !hash_equals((string) $storedOtp, (string) $request->input('otp'))) {
+                return response()->json(['message' => 'Code OTP invalide ou expiré'], 400);
+            }
+
+            return response()->json([
+                'message' => 'Code OTP validé',
+                'status' => 'otp_verified',
+            ]);
+        } catch (\Exception $e) {
+            Log::error('[AuthController@verifyClientPasswordResetOtp] Error', ['message' => $e->getMessage()]);
+            return response()->json(['message' => 'Erreur lors de la vérification du code OTP'], 500);
         }
     }
 
@@ -842,5 +1012,4 @@ class AuthController extends Controller
         }
     }
 }
-
 

@@ -160,6 +160,41 @@ class SaleController extends Controller
                     $cc->save();
                 }
 
+                // Notification In-App + Push Firebase au client
+                if ($client) {
+                    $newBalance = $card->fresh()->points;
+                    $notifTitle = "Nouveaux points accumulés ! 🎉";
+                    $notifBody  = "Vous avez gagné +{$pointsEarned} pts pour votre achat. Votre nouveau solde est de {$newBalance} pts.";
+
+                    try {
+                        \App\Models\Notification::create([
+                            'entity_id' => $card->entity_id,
+                            'user_id'   => $client->id,
+                            'type'      => 'points_earned',
+                            'title'     => $notifTitle,
+                            'message'   => $notifBody,
+                            'is_read'   => false,
+                        ]);
+                    } catch (\Throwable $ne) {
+                        Log::error('[SaleController@store] In-App Notification Error', ['error' => $ne->getMessage()]);
+                    }
+
+                    try {
+                        \App\Services\FirebaseNotificationService::notify(
+                            $client,
+                            $notifTitle,
+                            $notifBody,
+                            [
+                                'type'          => 'sale',
+                                'points_earned' => (string) $pointsEarned,
+                                'new_balance'   => (string) $newBalance,
+                            ]
+                        );
+                    } catch (\Throwable $fe) {
+                        Log::error('[SaleController@store] Firebase Push Error', ['error' => $fe->getMessage()]);
+                    }
+                }
+
 
                 Log::info('[SaleController@store] Sale created', [
                     'order_id'  => $order->id,

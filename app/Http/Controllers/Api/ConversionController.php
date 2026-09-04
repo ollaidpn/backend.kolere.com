@@ -112,7 +112,7 @@ class ConversionController extends Controller
                 }
                 $reward = $rewardQuery->findOrFail($validated['reward_id']);
 
-                if ($reward->status !== 'active') {
+                if (!in_array($reward->status, ['instock', 'active'])) {
                     throw ValidationException::withMessages([
                         'reward_id' => ['Cette récompense n\'est plus disponible'],
                     ]);
@@ -164,6 +164,42 @@ class ConversionController extends Controller
                 // Diminuer le stock si limité
                 if ($reward->stock !== null) {
                     $reward->decrement('stock');
+                }
+
+                // Notification In-App + Push Firebase au client
+                if ($card->user) {
+                    $newBalance = $card->fresh()->points;
+                    $notifTitle = "Conversion de récompense 🎁";
+                    $notifBody  = "Vous avez échangé {$reward->points_required} pts contre '{$reward->name}'. Solde restant : {$newBalance} pts.";
+
+                    try {
+                        \App\Models\Notification::create([
+                            'entity_id' => $card->entity_id,
+                            'user_id'   => $card->user->id,
+                            'type'      => 'reward_conversion',
+                            'title'     => $notifTitle,
+                            'message'   => $notifBody,
+                            'is_read'   => false,
+                        ]);
+                    } catch (\Throwable $ne) {
+                        Log::error('[ConversionController@store] In-App Notification Error', ['error' => $ne->getMessage()]);
+                    }
+
+                    try {
+                        \App\Services\FirebaseNotificationService::notify(
+                            $card->user,
+                            $notifTitle,
+                            $notifBody,
+                            [
+                                'type'            => 'conversion',
+                                'reward_id'       => (string) $reward->id,
+                                'points_deducted' => (string) $reward->points_required,
+                                'new_balance'     => (string) $newBalance,
+                            ]
+                        );
+                    } catch (\Throwable $fe) {
+                        Log::error('[ConversionController@store] Firebase Push Error', ['error' => $fe->getMessage()]);
+                    }
                 }
 
                 Log::info('[ConversionController@store] Conversion created', [

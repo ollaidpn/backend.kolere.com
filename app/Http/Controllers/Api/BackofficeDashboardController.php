@@ -109,11 +109,10 @@ class BackofficeDashboardController extends Controller
                 ];
             }
 
-            // Distribution des clients par tranche de points (colonne réelle = credit)
-            $clientDistribution = [
-                'bronze' => (clone $cardsQuery)->where('credit', '<', 500)->count(),
-                'silver' => (clone $cardsQuery)->whereBetween('credit', [500, 1499])->count(),
-                'gold' => (clone $cardsQuery)->where('credit', '>=', 1500)->count(),
+            // Distribution des cartes (virtuelles vs physiques)
+            $cardDistribution = [
+                'virtual' => (clone $cardsQuery)->where('card_kind', 'virtual')->orWhereNull('card_kind')->count(),
+                'physical' => (clone $cardsQuery)->where('card_kind', 'physical')->count(),
             ];
 
             $stats = [
@@ -155,7 +154,7 @@ class BackofficeDashboardController extends Controller
                 // Données pour graphiques
                 'charts' => [
                     'sales_evolution' => $salesEvolution,
-                    'client_distribution' => $clientDistribution,
+                    'card_distribution' => $cardDistribution,
                 ],
 
                 // Données récentes
@@ -268,11 +267,35 @@ class BackofficeDashboardController extends Controller
             Log::error('[getQuickStats] points_distribues', ['msg' => $e->getMessage()]);
         }
 
+        $recompensesActives = 0;
+        try {
+            $rewardsQuery = \App\Models\Reward::query();
+            if ($entityId) {
+                $rewardsQuery->where('entity_id', $entityId);
+            }
+            $recompensesActives = $rewardsQuery->whereIn('status', ['instock', 'active'])->count();
+        } catch (\Exception $e) {
+            Log::error('[getQuickStats] recompenses_actives', ['msg' => $e->getMessage()]);
+        }
+
+        $pointsEchanges = 0;
+        try {
+            $query = \App\Models\CardCredit::where('type', 'redeemed');
+            if ($entityId) {
+                $query->where('entity_id', $entityId);
+            }
+            $pointsEchanges = abs((int) $query->sum('credit'));
+        } catch (\Exception $e) {
+            Log::error('[getQuickStats] points_echanges', ['msg' => $e->getMessage()]);
+        }
+
         return response()->json(['data' => [
-            'clients_fidelises' => $clientsFidelises,
-            'ventes_du_jour'    => $ventesDuJour,
-            'points_distribues' => $pointsDistribues,
-            'promotions_actives' => 0,
+            'clients_fidelises'   => $clientsFidelises,
+            'ventes_du_jour'      => $ventesDuJour,
+            'points_distribues'   => $pointsDistribues,
+            'points_echanges'     => $pointsEchanges,
+            'recompenses_actives' => $recompensesActives,
+            'promotions_actives'  => $recompensesActives,
         ]]);
     }
 }

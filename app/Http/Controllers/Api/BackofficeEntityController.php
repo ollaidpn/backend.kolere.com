@@ -30,7 +30,7 @@ class BackofficeEntityController extends Controller
                 return response()->json(['message' => 'Entité non trouvée'], 404);
             }
             $fileService = new FileUploadService();
-            $data = $entity->toArray();
+            $data = $entity->loadMissing('domain')->toArray();
             $data['logo_url'] = $entity->logo
                 ? (str_starts_with($entity->logo, 'http') ? $entity->logo : $fileService->getUrl($entity->logo))
                 : null;
@@ -250,7 +250,7 @@ class BackofficeEntityController extends Controller
             $entity->update($data);
 
             $fileService = new \App\Services\FileUploadService();
-            $result = $entity->toArray();
+            $result = $entity->loadMissing('domain')->toArray();
             return response()->json(['message' => 'Paramètres mis à jour', 'data' => $result]);
         } catch (\Illuminate\Validation\ValidationException $e) {
             throw $e;
@@ -298,4 +298,3 @@ class BackofficeEntityController extends Controller
         }
     }
 }
-

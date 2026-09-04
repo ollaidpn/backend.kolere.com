@@ -37,6 +37,7 @@ use App\Http\Controllers\Api\PaymentRestrictionController;
 use App\Http\Controllers\Api\AppVersionController;
 use App\Http\Controllers\Api\UploadController;
 use App\Http\Controllers\Api\BackofficeNotificationController;
+use App\Http\Controllers\Api\EntityMailController;
 use App\Http\Controllers\Api\ClientNotificationController;
 use App\Http\Controllers\Api\BackofficeRbacController;
 use App\Services\RbacService;
@@ -48,7 +49,7 @@ use App\Services\RbacService;
 */
 
 // ─── Authentification (publiques) ────────────────────────────────────────────
-Route::prefix('auth')->group(function () {
+Route::prefix('auth')->middleware(['resolve.entity'])->group(function () {
     Route::post('/client/register', [AuthController::class, 'registerClient']);
     Route::post('/client/register/request-otp', [AuthController::class, 'requestClientRegistrationOtp']);
     Route::post('/client/register/verify-otp', [AuthController::class, 'verifyClientRegistrationOtp']);
@@ -56,6 +57,7 @@ Route::prefix('auth')->group(function () {
     Route::post('/client/login', [AuthController::class, 'loginClient']);
     Route::post('/client/claim-card', [AuthController::class, 'claimClientCard']);
     Route::post('/client/forgot/request-otp', [AuthController::class, 'requestClientPasswordResetOtp']);
+    Route::post('/client/forgot/verify-otp', [AuthController::class, 'verifyClientPasswordResetOtp']);
     Route::post('/client/forgot/reset', [AuthController::class, 'resetClientPassword']);
     Route::post('/phone/request-otp', [AuthController::class, 'requestPhoneOtp']);
     Route::post('/phone/verify-otp', [AuthController::class, 'verifyPhoneOtp']);
@@ -166,10 +168,12 @@ Route::prefix('backoffice')->middleware(['auth:sanctum', 'role:manager', 'resolv
 
     // Clients
     Route::get('/clients/stats', [ClientController::class, 'getStats']);
+    Route::post('/clients/check-availability', [ClientController::class, 'checkAvailability']);
     Route::get('/clients', [ClientController::class, 'index']);
     Route::post('/clients', [ClientController::class, 'store']);
     Route::get('/clients/{id}', [ClientController::class, 'show']);
     Route::put('/clients/{id}', [ClientController::class, 'update']);
+    Route::put('/clients/{id}/health', [ClientController::class, 'updateHealth']);
     Route::delete('/clients/{id}', [ClientController::class, 'destroy']);
 
     // Ventes
@@ -242,6 +246,10 @@ Route::prefix('backoffice')->middleware(['auth:sanctum', 'role:manager', 'resolv
     Route::get('/entity', [BackofficeEntityController::class, 'show']);
     Route::post('/entity', [BackofficeEntityController::class, 'update']);
     Route::post('/entity/domain-request', [BackofficeEntityController::class, 'requestDomainActivation']);
+    Route::get('/entity-mails', [EntityMailController::class, 'index']);
+    Route::post('/entity-mails', [EntityMailController::class, 'store']);
+    Route::put('/entity-mails/{entityMail}', [EntityMailController::class, 'update']);
+    Route::delete('/entity-mails/{entityMail}', [EntityMailController::class, 'destroy']);
     Route::post('/uploads', [UploadController::class, 'store']);
 
 
@@ -330,6 +338,7 @@ Route::prefix('client')->middleware(['auth:sanctum', 'role:client', 'resolve.ent
     // Profil
     Route::get('/profile', [ClientProfileController::class, 'show']);
     Route::match(['post', 'put'], '/profile', [ClientProfileController::class, 'update']);
+    Route::match(['post', 'put'], '/profile/health', [ClientProfileController::class, 'updateHealth']);
     Route::post('/profile/avatar', [ClientProfileController::class, 'updateAvatar']);
     Route::put('/profile/password', [ClientProfileController::class, 'updatePassword']);
     Route::put('/profile/email', [ClientProfileController::class, 'updateEmail']);

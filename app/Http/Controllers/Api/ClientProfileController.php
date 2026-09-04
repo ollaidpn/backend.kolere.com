@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Models\User;
 use App\Models\Card;
+use App\Models\UserHealth;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use App\Http\Controllers\Controller;
@@ -42,12 +43,21 @@ class ClientProfileController extends Controller
                 return response()->json(['message' => 'Profil non trouvé'], 404);
             }
 
+            $fileService = new \App\Services\FileUploadService();
+            $avatarUrl = null;
+            if ($profileData->avatar) {
+                $avatarUrl = str_starts_with($profileData->avatar, 'http')
+                    ? $profileData->avatar
+                    : $fileService->getUrl($profileData->avatar);
+            }
+
             $profile = [
                 'id' => $profileData->id,
                 'name' => $profileData->name,
                 'email' => $profileData->email,
                 'phone' => $profileData->phone,
                 'address' => $profileData->address,
+                'avatar' => $avatarUrl,
                 'created_at' => $profileData->created_at,
                 'updated_at' => $profileData->updated_at,
                 'email_verified_at' => $profileData->email_verified_at,
@@ -78,10 +88,81 @@ class ClientProfileController extends Controller
                 ];
             }
 
+            $health = UserHealth::where('user_id', $profileData->id)->first();
+            if ($health) {
+                $profile['health'] = [
+                    'id' => $health->id,
+                    'user_id' => $health->user_id,
+                    'blood_type' => $health->blood_type,
+                    'weight_kg' => $health->weight_kg,
+                    'height_cm' => $health->height_cm,
+                    'medical_history' => $health->medical_history,
+                    'chronic_diseases' => $health->chronic_diseases,
+                    'current_treatments' => $health->current_treatments,
+                    'emergency_notes' => $health->emergency_notes,
+                    'emergency_contact_name' => $health->emergency_contact_name,
+                    'emergency_contact_phone' => $health->emergency_contact_phone,
+                    'emergency_contact_relation' => $health->emergency_contact_relation,
+                    'allergies' => $health->allergies ?? [],
+                ];
+            }
+
             return response()->json(['data' => $profile]);
         } catch (\Exception $e) {
             Log::error('[ClientProfileController@show] Error', ['message' => $e->getMessage()]);
             return response()->json(['message' => 'Erreur lors du chargement du profil'], 500);
+        }
+    }
+
+    public function updateHealth(Request $request): JsonResponse
+    {
+        try {
+            $user = $request->user();
+
+            $validated = $request->validate([
+                'blood_type' => 'nullable|string|max:10',
+                'weight_kg' => 'nullable|numeric',
+                'height_cm' => 'nullable|integer',
+                'medical_history' => 'nullable|string',
+                'chronic_diseases' => 'nullable|string',
+                'current_treatments' => 'nullable|string',
+                'emergency_notes' => 'nullable|string',
+                'emergency_contact_name' => 'nullable|string',
+                'emergency_contact_phone' => 'nullable|string',
+                'emergency_contact_relation' => 'nullable|string',
+                'allergies' => 'nullable|array',
+            ]);
+
+            $health = UserHealth::where('user_id', $user->id)->first();
+            if (!$health) {
+                $health = new UserHealth();
+                $health->user_id = $user->id;
+            }
+
+            $health->fill($validated);
+            $health->save();
+
+            return response()->json([
+                'message' => 'Fiche médicale mise à jour',
+                'data' => [
+                    'id' => $health->id,
+                    'user_id' => $health->user_id,
+                    'blood_type' => $health->blood_type,
+                    'weight_kg' => $health->weight_kg,
+                    'height_cm' => $health->height_cm,
+                    'medical_history' => $health->medical_history,
+                    'chronic_diseases' => $health->chronic_diseases,
+                    'current_treatments' => $health->current_treatments,
+                    'emergency_notes' => $health->emergency_notes,
+                    'emergency_contact_name' => $health->emergency_contact_name,
+                    'emergency_contact_phone' => $health->emergency_contact_phone,
+                    'emergency_contact_relation' => $health->emergency_contact_relation,
+                    'allergies' => $health->allergies ?? [],
+                ],
+            ]);
+        } catch (\Exception $e) {
+            Log::error('[ClientProfileController@updateHealth] Error', ['message' => $e->getMessage()]);
+            return response()->json(['message' => 'Erreur lors de la mise à jour de la fiche médicale'], 500);
         }
     }
 
@@ -133,13 +214,21 @@ class ClientProfileController extends Controller
                 return response()->json(['message' => 'Profil non trouvé'], 404);
             }
 
+            $fileService = new \App\Services\FileUploadService();
+            $avatarUrl = null;
+            if ($freshUser->avatar) {
+                $avatarUrl = str_starts_with($freshUser->avatar, 'http')
+                    ? $freshUser->avatar
+                    : $fileService->getUrl($freshUser->avatar);
+            }
+
             $profile = [
                 'id' => $freshUser->id,
                 'name' => $freshUser->name,
                 'email' => $freshUser->email,
                 'phone' => $freshUser->phone,
                 'address' => $freshUser->address,
-                'avatar' => $freshUser->avatar,
+                'avatar' => $avatarUrl,
                 'created_at' => $freshUser->created_at,
                 'updated_at' => $freshUser->updated_at,
                 'email_verified_at' => $freshUser->email_verified_at,

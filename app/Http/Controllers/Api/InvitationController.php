@@ -83,17 +83,20 @@ class InvitationController extends Controller
             if ($inviteType === 'email') {
                 $frontendBase = rtrim((string) ($request->headers->get('origin') ?: env('FRONTEND_URL', config('app.url'))), '/');
                 $inviteLink = $frontendBase . '/invitation/' . $invitation->token;
+                $entity = \App\Models\Entity::find($entityId);
+                $shopName = $entity ? $entity->name : 'votre boutique';
 
                 try {
-                    Mail::raw(
-                        "Bonjour {$invitation->name},\n\nVous avez été invité(e) à rejoindre votre espace manager.\n\nLien d'activation : {$inviteLink}\n\nCe lien permet de compléter votre inscription et activer votre compte.",
-                        function ($message) use ($invitation, $request) {
-                            $message->to($invitation->email)->subject("Invitation manager - {$invitation->name}");
-                            app(ShopMailFromResolver::class)->applyTo(function (string $address, string $name) use ($message) {
-                                $message->from($address, $name);
-                            }, null, $request);
-                        }
-                    );
+                    Mail::send('emails.manager_invitation', [
+                        'invitation' => $invitation,
+                        'inviteLink' => $inviteLink,
+                        'shopName'   => $shopName,
+                    ], function ($message) use ($invitation, $shopName, $entity, $request) {
+                        $message->to($invitation->email)->subject("Invitation manager - {$shopName}");
+                        app(ShopMailFromResolver::class)->applyTo(function (string $address, string $name) use ($message) {
+                            $message->from($address, $name);
+                        }, $entity, $request);
+                    });
                 } catch (\Throwable $mailError) {
                     Log::warning('[InvitationController@store] Mail send failed', [
                         'message' => $mailError->getMessage(),

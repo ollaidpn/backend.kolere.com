@@ -139,6 +139,11 @@ class Entity extends Model
         return $this->hasMany(ShopPayment::class);
     }
 
+    public function entityMails()
+    {
+        return $this->hasMany(EntityMail::class);
+    }
+
     public function appInfo()
     {
         return $this->hasOne(AppInfo::class);
