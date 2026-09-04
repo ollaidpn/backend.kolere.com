@@ -201,6 +201,7 @@ Route::prefix('backoffice')->middleware(['auth:sanctum', 'role:manager', 'resolv
     Route::get('/rewards', [RewardController::class, 'index']);
     Route::post('/rewards', [RewardController::class, 'store']);
     Route::put('/rewards/{id}', [RewardController::class, 'update']);
+    Route::post('/rewards/{id}', [RewardController::class, 'update']);
     Route::delete('/rewards/{id}', [RewardController::class, 'destroy']);
     Route::patch('/rewards/{id}/toggle-status', [RewardController::class, 'toggleStatus']);
 
