@@ -50,7 +50,7 @@ class RewardController extends Controller
                 'points_required' => 'required|integer|min:1',
                 'value' => 'required|integer|min:0',
                 'stock' => 'nullable|integer|min:0',
-                'status' => 'in:active,inactive',
+                'status' => 'nullable|string|in:instock,outstock,draft,active,inactive',
                 'images.*' => 'nullable|file|mimes:jpg,jpeg,png,svg,webp|max:5120',
             ]);
 
@@ -98,7 +98,7 @@ class RewardController extends Controller
                 'points_required' => 'required|integer|min:1',
                 'value' => 'required|integer|min:0',
                 'stock' => 'nullable|integer|min:0',
-                'status' => 'required|in:active,inactive',
+                'status' => 'nullable|string|in:instock,outstock,draft,active,inactive',
                 'images.*' => 'nullable|file|mimes:jpg,jpeg,png,svg,webp|max:5120',
                 'keep_images' => 'nullable',
             ]);
