@@ -18,10 +18,13 @@ class ClientHistoryController extends Controller
 
     private function formatOrder(Order $order): array
     {
+        $createdAt = Carbon::parse($order->created_at);
         return [
             'id'             => $order->reference ?? 'TR-' . str_pad($order->id, 4, '0', STR_PAD_LEFT),
-            'storeName'      => 'Pharmacie',
-            'date'           => Carbon::parse($order->created_at)->format('d M Y, H:i'),
+            'storeName'      => $order->name ?: ($order->entity?->name ?? 'Boutique'),
+            'date'           => $createdAt->format('d M Y, H:i'),
+            'date_formatted' => $createdAt->translatedFormat('d F Y'),
+            'time_formatted' => $createdAt->format('H:i'),
             'amount'         => $order->amount,
             'points'         => $order->points_earned ?? 0,
             'status'         => $this->statusLabel($order->status ?? 'completed'),
@@ -42,7 +45,7 @@ class ClientHistoryController extends Controller
             $search = $request->get('search', '');
             $limit  = $request->get('limit', 10);
 
-            $query = Order::where('user_id', $user->id)->orderBy('created_at', 'desc');
+            $query = Order::with('entity')->where('user_id', $user->id)->orderBy('created_at', 'desc');
             if ($entityId = $this->entityId($request)) {
                 $query->where('entity_id', $entityId);
             }
