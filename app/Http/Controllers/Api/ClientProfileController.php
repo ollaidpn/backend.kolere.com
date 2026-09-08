@@ -77,6 +77,7 @@ class ClientProfileController extends Controller
                     ] : null,
                     'entity' => $profileData->card->entity ? [
                         'name' => $profileData->card->entity->name,
+                        'type' => $profileData->card->entity->type,
                         'logo' => $profileData->card->entity->logo,
                         'logo_url' => $profileData->card->entity->logo
                             ? (str_starts_with($profileData->card->entity->logo, 'http')
@@ -251,6 +252,7 @@ class ClientProfileController extends Controller
                     ] : null,
                     'entity' => $freshUser->card->entity ? [
                         'name' => $freshUser->card->entity->name,
+                        'type' => $freshUser->card->entity->type,
                         'logo' => $freshUser->card->entity->logo,
                         'logo_url' => $freshUser->card->entity->logo_url ?? $freshUser->card->entity->logo,
                         'primary_color' => $freshUser->card->entity->primary_color ?? '#0f172a',

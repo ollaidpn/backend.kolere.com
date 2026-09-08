@@ -323,7 +323,7 @@ class ShopOrderController extends Controller
                     'manager_id' => null,
                     'type' => 'order_created',
                     'title' => 'Nouvelle commande ' . $order->reference,
-                    'message' => 'Une nouvelle commande de ' . number_format($order->total, 0, ',', ' ') . ' FCFA a été passée par ' . data_get($validated['client_infos'], 'name', 'un client') . '.',
+                    'message' => 'Une nouvelle commande de ' . number_format($order->total, 0, '.', '.') . ' FCFA a été passée par ' . data_get($validated['client_infos'], 'name', 'un client') . '.',
                     'is_read' => false,
                 ]);
             } catch (\Throwable $notifErr) {
@@ -744,7 +744,7 @@ class ShopOrderController extends Controller
                             'manager_id' => null,
                             'type' => 'payment_success',
                             'title' => 'Paiement confirmé : ' . $order->reference,
-                            'message' => 'Le paiement de ' . number_format($order->total, 0, ',', ' ') . ' FCFA a été validé avec succès en ligne pour la commande ' . $order->reference . '.',
+                            'message' => 'Le paiement de ' . number_format($order->total, 0, '.', '.') . ' FCFA a été validé avec succès en ligne pour la commande ' . $order->reference . '.',
                             'is_read' => false,
                         ]);
                     } catch (\Throwable $notifErr) {
@@ -782,7 +782,7 @@ class ShopOrderController extends Controller
                             if (($ccphone === '+221' || str_starts_with($phone, '+221') || str_starts_with($phone, '221')) && !empty($phone)) {
                                 $fullPhone = $ccphone . preg_replace('/[^0-9]/', '', $phone);
                                 $entityName = $order->entity?->name ?: 'Kolere Shop';
-                                $totalFormatted = number_format($order->total, 0, ',', ' ');
+                                $totalFormatted = number_format($order->total, 0, '.', '.');
 
                                 $smsMessage = "Confirmation : Votre commande {$order->reference} de {$totalFormatted} FCFA a bien ete payee en ligne sur {$entityName}. Merci pour votre confiance !";
                                 if (mb_strlen($smsMessage) > 160) {
@@ -902,4 +902,3 @@ class ShopOrderController extends Controller
         }
     }
 }
-

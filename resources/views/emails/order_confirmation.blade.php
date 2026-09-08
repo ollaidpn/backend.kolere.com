@@ -94,8 +94,8 @@
                         <tr>
                             <td><strong>{{ data_get($item, 'name') }}</strong></td>
                             <td style="text-align: center;">{{ data_get($item, 'quantity') }}</td>
-                            <td style="text-align: right;">{{ number_format(data_get($item, 'price', 0), 0, ',', ' ') }} FCFA</td>
-                            <td style="text-align: right;">{{ number_format(data_get($item, 'total', 0), 0, ',', ' ') }} FCFA</td>
+                            <td style="text-align: right;">{{ number_format(data_get($item, 'price', 0), 0, '.', '.') }} FCFA</td>
+                            <td style="text-align: right;">{{ number_format(data_get($item, 'total', 0), 0, '.', '.') }} FCFA</td>
                         </tr>
                     @endforeach
                 </tbody>
@@ -104,17 +104,17 @@
             <table class="totals-table">
                 <tr>
                     <td style="color: #64748b;">Sous-total :</td>
-                    <td style="font-weight: 600;">{{ number_format($order->amount, 0, ',', ' ') }} FCFA</td>
+                    <td style="font-weight: 600;">{{ number_format($order->amount, 0, '.', '.') }} FCFA</td>
                 </tr>
                 @if($order->discount > 0)
                     <tr>
                         <td style="color: #059669; font-weight: 600;">Remise code promo :</td>
-                        <td style="color: #059669; font-weight: 700;">-{{ number_format($order->discount, 0, ',', ' ') }} FCFA</td>
+                        <td style="color: #059669; font-weight: 700;">-{{ number_format($order->discount, 0, '.', '.') }} FCFA</td>
                     </tr>
                 @endif
                 <tr class="total-row">
                     <td>Total TTC :</td>
-                    <td>{{ number_format($order->total, 0, ',', ' ') }} FCFA</td>
+                    <td>{{ number_format($order->total, 0, '.', '.') }} FCFA</td>
                 </tr>
             </table>
         </div>

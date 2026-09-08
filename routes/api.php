@@ -250,6 +250,7 @@ Route::prefix('backoffice')->middleware(['auth:sanctum', 'role:manager', 'resolv
     Route::get('/payment-restriction', [PaymentRestrictionController::class, 'show']);
 
     // Paramètres entité (pharmacie)
+    Route::get('/domains', [DomainController::class, 'index']);
     Route::get('/entity', [BackofficeEntityController::class, 'show']);
     Route::post('/entity', [BackofficeEntityController::class, 'update']);
     Route::post('/entity/domain-request', [BackofficeEntityController::class, 'requestDomainActivation']);
