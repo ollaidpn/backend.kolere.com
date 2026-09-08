@@ -26,9 +26,11 @@ class FirebaseTokenController extends Controller
         ]);
 
         $user = $request->user();
+        abort_if(!$user, 401, 'Utilisateur non authentifié.');
 
         Log::info('[FCM-TOKEN] 📥 Réception token FCM', [
-            'user_id' => $user->id ?? null,
+            'auth_model' => get_class($user),
+            'auth_id' => $user->id,
             'token_preview' => substr($request->input('fcm_token'), 0, 16) . '...',
             'device_type' => $request->input('device_type'),
             'device_name' => $request->input('device_name'),
@@ -62,11 +64,13 @@ class FirebaseTokenController extends Controller
         ]);
 
         $user = $request->user();
+        abort_if(!$user, 401, 'Utilisateur non authentifié.');
         $tokens = FirebaseToken::getActiveTokensForTarget($user);
         $exists = in_array($request->input('fcm_token'), $tokens);
 
         Log::info('[FCM-TOKEN] 🔍 Check token', [
-            'user_id' => $user->id ?? null,
+            'auth_model' => get_class($user),
+            'auth_id' => $user->id,
             'token_preview' => substr($request->input('fcm_token'), 0, 16) . '...',
             'exists' => $exists,
         ]);
@@ -87,9 +91,11 @@ class FirebaseTokenController extends Controller
         ]);
 
         $user = $request->user();
+        abort_if(!$user, 401, 'Utilisateur non authentifié.');
 
         Log::info('[FCM-TOKEN] 🔴 Désactivation token', [
-            'user_id' => $user->id ?? null,
+            'auth_model' => get_class($user),
+            'auth_id' => $user->id,
             'token_preview' => substr($request->input('fcm_token'), 0, 16) . '...',
         ]);
 

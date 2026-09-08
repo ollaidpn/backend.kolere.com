@@ -14,6 +14,7 @@ class FirebaseToken extends Model
         'manager_id',
         'admin_id',
         'token',
+        'token_hash',
         'device_type',
         'device_id',
         'device_name',
@@ -55,8 +56,40 @@ class FirebaseToken extends Model
         ?string $appVersion = null,
         ?string $appPlatform = null
     ): self {
-        $attributes = ['token' => $token];
-        
+        $ownerAttributes = self::ownerAttributes($authenticatable);
+        $tokenHash = hash('sha256', $token);
+
+        $firebaseToken = self::query()
+            ->where('token_hash', $tokenHash)
+            ->orWhere('token', $token)
+            ->first() ?? new self();
+
+        $firebaseToken->fill([
+            ...$ownerAttributes,
+            'token' => $token,
+            'token_hash' => $tokenHash,
+            'device_type' => $deviceType,
+            'device_id' => $deviceId,
+            'device_name' => $deviceName,
+            'app_version' => $appVersion,
+            'app_platform' => $appPlatform,
+            'is_active' => true,
+            'last_used_at' => now(),
+        ]);
+
+        $firebaseToken->save();
+
+        return $firebaseToken;
+    }
+
+    private static function ownerAttributes($authenticatable): array
+    {
+        $attributes = [
+            'user_id' => null,
+            'manager_id' => null,
+            'admin_id' => null,
+        ];
+
         if ($authenticatable instanceof User) {
             $attributes['user_id'] = $authenticatable->id;
         } elseif ($authenticatable instanceof Manager) {
@@ -64,21 +97,10 @@ class FirebaseToken extends Model
         } elseif ($authenticatable instanceof Admin) {
             $attributes['admin_id'] = $authenticatable->id;
         } else {
-            $attributes['user_id'] = $authenticatable->id ?? null;
+            throw new \InvalidArgumentException('Authenticatable FCM invalide.');
         }
 
-        return self::updateOrCreate(
-            $attributes,
-            [
-                'device_type' => $deviceType,
-                'device_id' => $deviceId,
-                'device_name' => $deviceName,
-                'app_version' => $appVersion,
-                'app_platform' => $appPlatform,
-                'is_active' => true,
-                'last_used_at' => now(),
-            ]
-        );
+        return $attributes;
     }
 
     /**
