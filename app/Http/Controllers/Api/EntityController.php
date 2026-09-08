@@ -363,6 +363,14 @@ class EntityController extends Controller
                 return response()->json(['message' => 'Boutique introuvable'], 404);
             }
 
+            $domainData = null;
+            if ($entity->domain) {
+                $domainData = [
+                    'id' => $entity->domain->id,
+                    'name' => ucfirst($entity->domain->name),
+                ];
+            }
+
             return response()->json([
                 'data' => [
                     'id' => $entity->id,
@@ -389,7 +397,7 @@ class EntityController extends Controller
                     'fayko_status' => (bool) $entity->fayko_status,
                     'delivery_zones' => $entity->delivery_zones,
                     'logo_url' => $entity->logo ? (str_starts_with($entity->logo, 'http') ? $entity->logo : (new FileUploadService())->getUrl($entity->logo)) : null,
-                    'domain' => $entity->domain,
+                    'domain' => $domainData,
                 ],
             ]);
         } catch (\Exception $e) {

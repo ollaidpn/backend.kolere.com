@@ -31,6 +31,9 @@ class BackofficeEntityController extends Controller
             }
             $fileService = new FileUploadService();
             $data = $entity->loadMissing('domain')->toArray();
+            if (isset($data['domain']['name']) && is_string($data['domain']['name'])) {
+                $data['domain']['name'] = ucfirst($data['domain']['name']);
+            }
             $data['logo_url'] = $entity->logo
                 ? (str_starts_with($entity->logo, 'http') ? $entity->logo : $fileService->getUrl($entity->logo))
                 : null;
@@ -303,6 +306,9 @@ class BackofficeEntityController extends Controller
 
             $fileService = new \App\Services\FileUploadService();
             $result = $entity->loadMissing('domain')->toArray();
+            if (isset($result['domain']['name']) && is_string($result['domain']['name'])) {
+                $result['domain']['name'] = ucfirst($result['domain']['name']);
+            }
             return response()->json(['message' => 'Paramètres mis à jour', 'data' => $result]);
         } catch (\Illuminate\Validation\ValidationException $e) {
             throw $e;
