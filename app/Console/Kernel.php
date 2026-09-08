@@ -13,6 +13,8 @@ class Kernel extends ConsoleKernel
     protected function schedule(Schedule $schedule): void
     {
         $schedule->command('campaigns:process-scheduled')->everyMinute();
+        $schedule->command('meditect:process-imports')->everyThirtySeconds()->withoutOverlapping();
+        $schedule->command('meditect:enrich-items')->everyMinute()->withoutOverlapping();
     }
 
 

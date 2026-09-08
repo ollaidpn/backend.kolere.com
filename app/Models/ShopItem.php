@@ -16,6 +16,12 @@ class ShopItem extends Model
 
     protected $fillable = [
         'entity_id',
+        'external_source',
+        'external_item_id',
+        'external_reference',
+        'is_enriched',
+        'needs_enrich_update',
+        'external_meta',
         'category_id',
         'brand_id',
         'reference',
@@ -30,7 +36,10 @@ class ShopItem extends Model
     ];
 
     protected $casts = [
+        'is_enriched' => 'boolean',
+        'needs_enrich_update' => 'boolean',
         'gallery' => 'array',
+        'external_meta' => 'array',
         'price' => 'decimal:2',
         'promo_price' => 'decimal:2',
         'stock' => 'integer',

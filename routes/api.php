@@ -265,6 +265,7 @@ Route::prefix('backoffice')->middleware(['auth:sanctum', 'role:manager', 'resolv
     Route::post('/shop/items', [ShopItemController::class, 'store']);
     Route::get('/shop/items/{item}', [ShopItemController::class, 'show']);
     Route::put('/shop/items/{item}', [ShopItemController::class, 'update']);
+    Route::post('/shop/items/{item}/enrich', [ShopItemController::class, 'enrich']);
     Route::delete('/shop/items/{item}', [ShopItemController::class, 'destroy']);
 
     Route::get('/shop/categories', [ShopCategoryController::class, 'index']);
@@ -311,6 +312,23 @@ Route::prefix('backoffice')->middleware(['auth:sanctum', 'role:manager', 'resolv
         Route::post('/custom/check', [\App\Http\Controllers\Api\ShopDomainController::class, 'customCheck']);
         Route::post('/custom/register', [\App\Http\Controllers\Api\ShopDomainController::class, 'customRegister']);
     });
+
+    // Journal des logs Laravel
+    Route::get('/logs', [\App\Http\Controllers\Api\SystemLogController::class, 'index']);
+    Route::delete('/logs', [\App\Http\Controllers\Api\SystemLogController::class, 'clear']);
+
+    // Extensions (Meditect, etc.)
+    Route::get('/extensions/meditect/storages', [\App\Http\Controllers\Api\ExtensionCredentialController::class, 'storages']);
+    Route::get('/meditect/products/{productId}/details', [\App\Http\Controllers\Api\ExtensionCredentialController::class, 'productDetails']);
+    Route::post('/meditect/sync', [\App\Http\Controllers\Api\ExtensionCredentialController::class, 'sync']);
+    Route::get('/extensions/{extension}', [\App\Http\Controllers\Api\ExtensionCredentialController::class, 'show']);
+    Route::post('/extensions/{extension}/config', [\App\Http\Controllers\Api\ExtensionCredentialController::class, 'updateConfig']);
+    Route::get('/extensions/{extension}/import/status', [\App\Http\Controllers\Api\ExtensionCredentialController::class, 'importStatus']);
+    Route::post('/extensions/{extension}/import/start', [\App\Http\Controllers\Api\ExtensionCredentialController::class, 'importStart']);
+    Route::post('/extensions/{extension}/import/pause', [\App\Http\Controllers\Api\ExtensionCredentialController::class, 'importPause']);
+    Route::post('/extensions/{extension}/import/resume', [\App\Http\Controllers\Api\ExtensionCredentialController::class, 'importResume']);
+    Route::post('/extensions/{extension}/import/stop', [\App\Http\Controllers\Api\ExtensionCredentialController::class, 'importStop']);
+    Route::post('/extensions/{extension}', [\App\Http\Controllers\Api\ExtensionCredentialController::class, 'store']);
 });
 
 // ─── Espace Manager (table managers) ─────────────────────────────────────────

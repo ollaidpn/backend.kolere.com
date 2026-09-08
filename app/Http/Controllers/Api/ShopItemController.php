@@ -25,6 +25,11 @@ class ShopItemController extends Controller
                 $query->where('entity_id', $entityId);
             }
 
+            // Pour les requêtes publiques (boutique sans authentification), ne retourner que les articles actifs
+            if (!$request->user() && !str_contains($request->path(), 'backoffice')) {
+                $query->where('status', 'active');
+            }
+
             if ($request->search) {
                 $search = trim((string) $request->search);
                 $query->where(function ($q) use ($search) {
@@ -145,34 +150,34 @@ class ShopItemController extends Controller
             }
 
             $validated = $request->validate([
-                'category_id' => 'required|exists:shop_categories,id',
+                'category_id' => 'nullable|exists:shop_categories,id',
                 'brand_id' => 'nullable|exists:shop_brands,id',
                 'reference' => 'nullable|string|max:255|unique:shop_items,reference,' . $item->id,
-                'name' => 'required|string|max:255',
-                'price' => 'required|numeric|min:0',
+                'name' => 'sometimes|required|string|max:255',
+                'price' => 'sometimes|required|numeric|min:0',
                 'promo_price' => 'nullable|numeric|min:0|lte:price',
                 'stock' => 'nullable|integer|min:0',
                 'description' => 'nullable|string|max:5000',
                 'image' => 'nullable|file|mimes:jpg,jpeg,png,webp,svg|max:2048',
                 'gallery' => 'nullable|array',
                 'gallery.*' => 'nullable|file|mimes:jpg,jpeg,png,webp,svg|max:5120',
-                'status' => 'required|in:active,draft,archived',
+                'status' => 'nullable|in:active,draft,archived',
                 'keep_gallery' => 'nullable|string', // Liste JSON des images de la galerie existante à garder
             ]);
 
             $fileService = new \App\Services\FileUploadService();
 
-            $data = [
-                'category_id' => $validated['category_id'],
-                'brand_id' => $validated['brand_id'] ?? null,
+            $data = array_filter([
+                'category_id' => $validated['category_id'] ?? $item->category_id,
+                'brand_id' => array_key_exists('brand_id', $validated) ? $validated['brand_id'] : $item->brand_id,
                 'reference' => $validated['reference'] ?? $item->reference,
-                'name' => $validated['name'],
-                'price' => $validated['price'],
-                'promo_price' => $validated['promo_price'] ?? null,
-                'stock' => $validated['stock'] ?? 0,
-                'description' => $validated['description'] ?? null,
-                'status' => $validated['status'],
-            ];
+                'name' => $validated['name'] ?? $item->name,
+                'price' => $validated['price'] ?? $item->price,
+                'promo_price' => array_key_exists('promo_price', $validated) ? $validated['promo_price'] : $item->promo_price,
+                'stock' => $validated['stock'] ?? $item->stock,
+                'description' => array_key_exists('description', $validated) ? $validated['description'] : $item->description,
+                'status' => $validated['status'] ?? $item->status,
+            ], static fn ($v) => $v !== null);
 
             // Remplacement image principale
             if ($request->hasFile('image')) {
@@ -252,6 +257,29 @@ class ShopItemController extends Controller
         } catch (\Exception $e) {
             Log::error('[ShopItemController@destroy] Error', ['item_id' => $item->id, 'message' => $e->getMessage()]);
             return response()->json(['message' => 'Erreur lors de la suppression de l\'article'], 500);
+        }
+    }
+
+    public function enrich(Request $request, ShopItem $item): JsonResponse
+    {
+        try {
+            if ($entityId = $this->currentEntityId($request)) {
+                abort_unless((int) $item->entity_id === (int) $entityId, 404);
+            }
+
+            $result = app(\App\Services\MeditectService::class)->enrichMeditectShopItem($item);
+
+            if (!$result['success']) {
+                return response()->json(['message' => $result['message']], $result['status']);
+            }
+
+            return response()->json([
+                'message' => $result['message'],
+                'data' => $result['data'],
+            ]);
+        } catch (\Exception $e) {
+            Log::error('[ShopItemController@enrich] Error', ['item_id' => $item->id, 'message' => $e->getMessage()]);
+            return response()->json(['message' => 'Erreur lors de l\'actualisation de l\'article: ' . $e->getMessage()], 500);
         }
     }
 }

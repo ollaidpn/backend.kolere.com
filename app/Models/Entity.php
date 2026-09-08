@@ -39,11 +39,9 @@ class Entity extends Model
         'fayko_secret_key',
         'fayko_webhook_key',
         'fayko_mode',
+        'fayko_auto_payout',
+        'fayko_ap_phone',
     ];
-
-
-
-
 
     protected $searchableFields = ['*'];
 
@@ -51,6 +49,8 @@ class Entity extends Model
         'web_slider' => 'array',
         'web_features' => 'array',
         'delivery_zones' => 'array',
+        'fayko_auto_payout' => 'boolean',
+        'fayko_ap_phone' => 'array',
     ];
 
     public function alertApps()

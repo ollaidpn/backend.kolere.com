@@ -236,6 +236,8 @@ class BackofficeEntityController extends Controller
                 'fayko_secret_key' => 'nullable|string|max:255',
                 'fayko_webhook_key' => 'nullable|string|max:255',
                 'fayko_mode' => 'nullable|string|max:20',
+                'fayko_auto_payout' => 'nullable|boolean',
+                'fayko_ap_phone' => 'nullable',
                 'diotko_public_key' => 'nullable|string|max:255',
                 'diotko_secret_key' => 'nullable|string|max:255',
             ]);
@@ -245,6 +247,22 @@ class BackofficeEntityController extends Controller
                 'fayko_public_key', 'fayko_secret_key', 'fayko_webhook_key', 'fayko_mode',
                 'diotko_public_key', 'diotko_secret_key',
             ]);
+
+            if ($request->has('fayko_auto_payout')) {
+                $data['fayko_auto_payout'] = filter_var($request->input('fayko_auto_payout'), FILTER_VALIDATE_BOOLEAN);
+            }
+
+            if ($request->has('fayko_ap_phone')) {
+                $apPhone = $request->input('fayko_ap_phone');
+                if (is_string($apPhone)) {
+                    $decoded = json_decode($apPhone, true);
+                    $data['fayko_ap_phone'] = is_array($decoded) ? $decoded : null;
+                } else if (is_array($apPhone)) {
+                    $data['fayko_ap_phone'] = $apPhone;
+                } else {
+                    $data['fayko_ap_phone'] = null;
+                }
+            }
 
             $webSlider = $this->normalizeWebSlider($request->input('web_slider'));
             if ($webSlider !== null) {
