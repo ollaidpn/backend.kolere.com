@@ -1421,6 +1421,167 @@ class MeditectService
         ];
     }
 
+    /**
+     * Initialise rapidement une session. La récupération du catalogue est
+     * exécutée par meditect:process-imports afin de ne pas bloquer la requête HTTP.
+     */
+    public function queueMeditectImportSession(int $entityId): array
+    {
+        $credential = ExtensionCredential::where('entity_id', $entityId)
+            ->where('extension', 'meditect')
+            ->first();
+
+        if (!$credential || !$credential->status) {
+            return ['success' => false, 'message' => 'Meditect n\'est pas actif pour cette boutique.'];
+        }
+
+        $existingSession = MeditectImportSession::where('entity_id', $entityId)->first();
+        if ($existingSession && in_array($existingSession->status, ['staging', 'processing'], true)) {
+            return [
+                'success' => true,
+                'message' => 'Import Meditect déjà en cours.',
+                'data' => $existingSession->fresh(),
+            ];
+        }
+
+        $config = $credential->config ?? [];
+        $selectedRayons = is_array($config['selected_rayons'] ?? null) ? $config['selected_rayons'] : [];
+        if (empty($selectedRayons)) {
+            return ['success' => false, 'message' => 'Aucun rayon sélectionné.'];
+        }
+
+        MeditectImportTask::where('entity_id', $entityId)->delete();
+        $selectedRayons = $this->buildSelectedRayonsConfig($entityId, $selectedRayons, $config, null, true);
+
+        $session = MeditectImportSession::updateOrCreate(
+            ['entity_id' => $entityId],
+            [
+                'extension_credential_id' => $credential->id,
+                'status' => 'staging',
+                'cursor' => null,
+                'buffer' => [],
+                'buffer_index' => 0,
+                'batch_size' => 1000,
+                'processed_count' => 0,
+                'imported_count' => 0,
+                'matched_count' => 0,
+                'total_count' => 0,
+                'selected_rayons_snapshot' => $selectedRayons,
+                'meta' => ['stage' => 'staging', 'pending_tasks' => 0],
+                'error_message' => null,
+                'started_at' => now(),
+                'paused_at' => null,
+                'finished_at' => null,
+                'last_run_at' => null,
+            ]
+        );
+
+        return [
+            'success' => true,
+            'message' => 'Synchronisation planifiée. La préparation se poursuit en arrière-plan.',
+            'data' => $session->fresh(),
+        ];
+    }
+
+    private function stageQueuedMeditectImportSession(MeditectImportSession $session): array
+    {
+        $credential = ExtensionCredential::where('entity_id', $session->entity_id)
+            ->where('extension', 'meditect')
+            ->first();
+        if (!$credential || !$credential->status) {
+            $session->status = 'error';
+            $session->error_message = 'Meditect inactif.';
+            $session->save();
+            return ['success' => false, 'message' => 'Meditect inactif.'];
+        }
+
+        $credentials = array_merge([
+            'api_key' => 'AIzaSyB1E1Xsuda9MPItNw1hlRVrCuDhl5LFijk',
+            'email' => 'pharmaciekhadijaba@gmail.com',
+            'password' => 'meditect2025',
+            'pin' => '202600',
+        ], $credential->data ?? []);
+        $tokens = $this->authenticate($credentials);
+        if (!$tokens) {
+            $session->status = 'error';
+            $session->error_message = 'Authentification Meditect échouée.';
+            $session->last_run_at = now();
+            $session->save();
+            return ['success' => false, 'message' => 'Authentification Meditect échouée.'];
+        }
+
+        $config = $credential->config ?? [];
+        $selectedRayons = is_array($session->selected_rayons_snapshot ?? null)
+            ? $session->selected_rayons_snapshot
+            : [];
+        $storages = $this->getStorages($tokens) ?? [];
+        $selectedRayons = $this->buildSelectedRayonsConfig($session->entity_id, $selectedRayons, $config, $storages, true);
+        $stage = $this->stageMeditectImportTasks(
+            $session->entity_id,
+            (int) $session->id,
+            (int) $credential->id,
+            $tokens,
+            $selectedRayons
+        );
+        $totalTasks = (int) ($stage['total_tasks'] ?? 0);
+        $rayonStats = is_array($stage['rayon_stats'] ?? null) ? $stage['rayon_stats'] : [];
+
+        if ($totalTasks > 0) {
+            ShopItem::where('entity_id', $session->entity_id)
+                ->where('external_source', 'meditect')
+                ->delete();
+        }
+
+        $selectedRayons = array_map(static function (array $rayon) use ($rayonStats, $totalTasks): array {
+            $rayonId = (string) ($rayon['id'] ?? '');
+            $rayon['count'] = (int) ($rayon['count'] ?? ($rayonStats[$rayonId]['count'] ?? 0));
+            $rayon['matched_count'] = (int) ($rayonStats[$rayonId]['count'] ?? 0);
+            $rayon['synched'] = 0;
+            $rayon['status'] = $totalTasks > 0 ? 'pending' : 'completed';
+            return $rayon;
+        }, $selectedRayons);
+
+        $session->status = $totalTasks > 0 ? 'processing' : 'completed';
+        $session->total_count = $totalTasks;
+        $session->matched_count = $totalTasks;
+        $session->selected_rayons_snapshot = $selectedRayons;
+        $session->meta = array_merge($session->meta ?? [], [
+            'stage' => $totalTasks > 0 ? 'staged' : 'completed',
+            'staged_total' => $totalTasks,
+            'rayon_stats' => $rayonStats,
+        ]);
+        $session->last_run_at = now();
+        if ($totalTasks === 0) {
+            $session->finished_at = now();
+        }
+        $session->save();
+
+        $this->persistImportConfig($session->entity_id, $selectedRayons, [
+            'status' => $session->status,
+            'cursor' => null,
+            'processed' => 0,
+            'imported' => 0,
+            'matched' => $totalTasks,
+            'total' => $totalTasks,
+            'batch_size' => $session->batch_size,
+            'started_at' => optional($session->started_at)->toIso8601String(),
+            'finished_at' => optional($session->finished_at)->toIso8601String(),
+            'paused_at' => null,
+            'error' => null,
+            'staged_total' => $totalTasks,
+            'pending_tasks' => $totalTasks,
+            'processing_tasks' => 0,
+            'completed_tasks' => 0,
+            'failed_tasks' => 0,
+        ], $config);
+
+        return [
+            'success' => true,
+            'message' => $totalTasks > 0 ? 'Tâches Meditect préparées.' : 'Aucun produit trouvé pour les rayons sélectionnés.',
+            'data' => $session->fresh(),
+        ];
+    }
+
     public function pauseMeditectImportSession(int $entityId): array
     {
         $session = MeditectImportSession::where('entity_id', $entityId)->first();
@@ -1478,9 +1639,13 @@ class MeditectService
     public function processPendingMeditectImportSessions(): array
     {
         $results = [];
-        $sessions = MeditectImportSession::where('status', 'processing')->get();
+        $sessions = MeditectImportSession::whereIn('status', ['staging', 'processing'])->get();
 
         foreach ($sessions as $session) {
+            if ($session->status === 'staging') {
+                $results[] = $this->stageQueuedMeditectImportSession($session);
+                continue;
+            }
             $results[] = $this->processMeditectImportSession($session);
         }
 

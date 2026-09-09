@@ -109,6 +109,177 @@ class ShopOrderController extends Controller
         ];
     }
 
+    /**
+     * Fallback lorsque le webhook Fayko est retardé ou indisponible.
+     * Le webhook reste la voie principale; cette synchronisation évite qu'un
+     * checkout confirmé reste bloqué en attente côté boutique.
+     */
+    private function syncOrderPaymentFromGateway(ShopOrder $order): void
+    {
+        if (!$order->payment_reference || $order->status_payment === 'paid' || $order->status_order === 'cancelled') {
+            return;
+        }
+
+        $entity = Entity::find($order->entity_id);
+        $fayko = new FaykoPaymentService(
+            $entity?->fayko_public_key ?: env('FAYKO_PUBLIC_KEY'),
+            $entity?->fayko_secret_key ?: env('FAYKO_SECRET_KEY'),
+            $entity?->fayko_webhook_key ?: env('FAYKO_WEBHOOK_KEY'),
+        );
+
+        $response = $fayko->findCheckout((string) $order->payment_reference);
+        $transaction = data_get($response, 'data.transaction', data_get($response, 'data', []));
+        $gatewayStatus = strtolower((string) data_get($transaction, 'status', ''));
+
+        if ($gatewayStatus === '' && data_get($transaction, 'success') === true) {
+            $gatewayStatus = 'success';
+        }
+
+        if (!in_array($gatewayStatus, ['success', 'failed', 'cancelled'], true)) {
+            return;
+        }
+
+        $gatewayReference = data_get($transaction, 'reference') ?: $order->payment_reference;
+        $paymentLog = ShopPaymentLog::where('shop_order_id', $order->id)->latest()->first();
+
+        DB::transaction(function () use ($order, $paymentLog, $gatewayStatus, $gatewayReference, $response): void {
+            if ($gatewayStatus === 'success') {
+                $paymentLog?->update([
+                    'status' => 'success',
+                    'transaction_id' => $gatewayReference,
+                    'gateway_reference' => $gatewayReference,
+                    'gateway_payload' => $response,
+                ]);
+
+                $payment = ShopPayment::firstOrCreate(
+                    ['shop_order_id' => $order->id],
+                    [
+                        'entity_id' => $order->entity_id,
+                        'reference' => $order->payment_reference ?: $this->generatePaymentReference(),
+                        'client_infos' => $order->client_infos,
+                        'amount' => $order->total,
+                        'method' => $order->payment_method ?? 'online',
+                        'paid_by' => $order->paid_by,
+                        'status' => 'paid',
+                        'gateway_reference' => $gatewayReference,
+                    ]
+                );
+                $payment->update(['status' => 'paid', 'gateway_reference' => $gatewayReference]);
+                $order->update([
+                    'status_payment' => 'paid',
+                    'status_order' => in_array($order->status_order, ['pending', 'confirmed'], true) ? 'confirmed' : $order->status_order,
+                    'payment_reference' => $gatewayReference,
+                ]);
+                return;
+            }
+
+            $paymentLog?->update([
+                'status' => 'failed',
+                'gateway_reference' => $gatewayReference,
+                'gateway_payload' => $response,
+            ]);
+            $this->changeOrderStock($order, 1);
+            $order->update(['status_order' => 'cancelled']);
+        });
+    }
+
+    /**
+     * Exécute l'Auto-Payout après la confirmation du paiement.
+     * La réservation atomique empêche un webhook Fayko répété de payer deux fois.
+     */
+    private function executeAutoPayout(ShopOrder $order): void
+    {
+        $entity = Entity::find($order->entity_id);
+        if (!$entity?->fayko_auto_payout || !in_array($order->paid_by, ['wave', 'wave_senegal', 'orange_money', 'orange_money_senegal'], true)) {
+            return;
+        }
+
+        $payment = ShopPayment::where('shop_order_id', $order->id)->first();
+        if (!$payment || $payment->auto_payout_status) {
+            return;
+        }
+
+        $claimed = ShopPayment::whereKey($payment->id)
+            ->whereNull('auto_payout_status')
+            ->update(['auto_payout_status' => 'processing']);
+        if ($claimed !== 1) {
+            return;
+        }
+
+        $configuredPhone = is_array($entity->fayko_ap_phone) ? $entity->fayko_ap_phone : [];
+        $phone = preg_replace('/\D+/', '', (string) ($configuredPhone['phone'] ?? ''));
+        $ccphone = trim((string) ($configuredPhone['ccphone'] ?? '+221'));
+        if ($ccphone !== '' && !str_starts_with($ccphone, '+')) {
+            $ccphone = '+' . $ccphone;
+        }
+
+        if ($phone === '') {
+            $payment->update([
+                'auto_payout_status' => 'failed',
+                'auto_payout_error' => 'Numéro Auto-Payout non configuré.',
+            ]);
+            Log::error('[ShopOrderController@autoPayout] Numéro récepteur absent', ['order_id' => $order->id]);
+            return;
+        }
+
+        try {
+            $fayko = new FaykoPaymentService(
+                $entity->fayko_public_key ?: env('FAYKO_PUBLIC_KEY'),
+                $entity->fayko_secret_key ?: env('FAYKO_SECRET_KEY'),
+                $entity->fayko_webhook_key ?: env('FAYKO_WEBHOOK_KEY'),
+            );
+            $init = $fayko->initPayout();
+            $initData = $init['data'] ?? [];
+            $reference = $initData['request_reference'] ?? $initData['payout_reference'] ?? $initData['reference'] ?? null;
+            if (!$reference) {
+                throw new \RuntimeException('Fayko n’a pas retourné de référence Auto-Payout.');
+            }
+
+            $payment->update([
+                'auto_payout_reference' => $reference,
+                'auto_payout_payload' => ['init' => $init],
+            ]);
+
+            $payout = $fayko->confirmPayout([
+                'reference' => $reference,
+                'provider' => $order->paid_by,
+                'amount' => (int) round((float) $order->total),
+                'phone' => $phone,
+                'ccphone' => $ccphone,
+                'name' => $entity->name ?: 'Kolere',
+                'email' => $entity->email ?: null,
+                'note' => 'Auto-Payout commande ' . $order->reference,
+            ]);
+            $payoutData = $payout['data'] ?? [];
+
+            $payment->update([
+                'auto_payout_status' => $payoutData['status'] ?? 'pending',
+                'auto_payout_reference' => $payoutData['payout_reference'] ?? $payoutData['request_reference'] ?? $reference,
+                'auto_payout_payload' => $payout,
+                'auto_payout_error' => null,
+            ]);
+
+            Log::info('[ShopOrderController@autoPayout] Auto-Payout déclenché', [
+                'order_id' => $order->id,
+                'order_reference' => $order->reference,
+                'provider' => $order->paid_by,
+                'phone' => $ccphone . $phone,
+                'payout_reference' => $payment->auto_payout_reference,
+            ]);
+        } catch (\Throwable $e) {
+            $payment->update([
+                'auto_payout_status' => 'failed',
+                'auto_payout_error' => $e->getMessage(),
+            ]);
+            Log::error('[ShopOrderController@autoPayout] Échec Auto-Payout', [
+                'order_id' => $order->id,
+                'order_reference' => $order->reference,
+                'provider' => $order->paid_by,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
     private function resolveOrderByReference(string $reference): ?ShopOrder
     {
         return ShopOrder::where('reference', $reference)
@@ -499,6 +670,20 @@ class ShopOrderController extends Controller
                 return response()->json(['message' => 'Commande introuvable'], 404);
             }
 
+            if ($order->status_payment !== 'paid' && $order->status_order !== 'cancelled') {
+                try {
+                    $this->syncOrderPaymentFromGateway($order);
+                    if ($order->fresh()->status_payment === 'paid') {
+                        $this->executeAutoPayout($order->fresh());
+                    }
+                } catch (\Throwable $gatewayError) {
+                    Log::notice('[ShopOrderController@checkPublic] Fallback Fayko indisponible', [
+                        'order_reference' => $order->reference,
+                        'error' => $gatewayError->getMessage(),
+                    ]);
+                }
+            }
+
             return response()->json([
                 'message' => 'Statut de commande',
                 'data' => $this->paymentDataForOrder($order->fresh()),
@@ -554,6 +739,25 @@ class ShopOrderController extends Controller
             $payload = $request->all();
             $type = $payload['type'] ?? 'checkout';
             $event = $payload['event'] ?? '';
+
+            $providedSecret = trim((string) $request->header('webhook-secret'));
+            $validSecret = $providedSecret !== '' && Entity::query()
+                ->whereNotNull('fayko_webhook_key')
+                ->pluck('fayko_webhook_key')
+                ->contains(static fn ($secret): bool => is_string($secret) && hash_equals($secret, $providedSecret));
+
+            $fallbackSecret = (string) env('FAYKO_WEBHOOK_KEY', '');
+            if (!$validSecret && $fallbackSecret !== '' && hash_equals($fallbackSecret, $providedSecret)) {
+                $validSecret = true;
+            }
+
+            if (!$validSecret) {
+                Log::warning('[ShopOrderController@webhookFayko] Secret webhook invalide');
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Webhook non autorisé.',
+                ], 401);
+            }
 
             Log::info('[ShopOrderController@webhookFayko] Webhook reçu', [
                 'type' => $type,
@@ -699,7 +903,7 @@ class ShopOrderController extends Controller
                 ?? data_get($payload, 'reference')
                 ?? $paymentLog?->gateway_reference;
 
-            return DB::transaction(function () use ($payload, $order, $paymentLog, $status, $gatewayReference, $isPaid, $isFailedOrExpired) {
+            $webhookResponse = DB::transaction(function () use ($payload, $order, $paymentLog, $status, $gatewayReference, $isPaid, $isFailedOrExpired) {
                 if ($isPaid) {
                     if ($paymentLog) {
                         $paymentLog->update([
@@ -818,7 +1022,8 @@ class ShopOrderController extends Controller
                 }
 
                 if ($isFailedOrExpired) {
-                    $newStatus = $event === 'checkout.expired' || $status === 'expired' ? 'expired' : 'failed';
+                    // Le contrat Fayko expose une expiration comme un checkout failed.
+                    $newStatus = 'failed';
 
                     if ($paymentLog) {
                         $paymentLog->update([
@@ -845,6 +1050,12 @@ class ShopOrderController extends Controller
                 Log::info('[ShopOrderController@webhookFayko] Traitement termine', ['response' => $res->getContent()]);
                 return $res;
             });
+
+            if ($order->fresh()->status_payment === 'paid') {
+                $this->executeAutoPayout($order->fresh());
+            }
+
+            return $webhookResponse;
         } catch (\Exception $e) {
             Log::error('[ShopOrderController@webhookFayko] Error Exception', [
                 'message' => $e->getMessage(),
@@ -886,7 +1097,7 @@ class ShopOrderController extends Controller
 
             return response()->json([
                 'data' => [
-                    'status' => $log->status, // init, pending, success, failed, expired, cancelled
+                    'status' => $log->status === 'expired' ? 'failed' : $log->status,
                     'transaction_id' => $log->transaction_id ?: $log->gateway_reference,
                     'reference' => $log->reference,
                     'amount' => $log->amount,

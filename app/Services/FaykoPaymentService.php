@@ -72,17 +72,21 @@ class FaykoPaymentService
             'Content-Type' => 'application/json',
         ];
 
+        // Fayko recommande le webhook-key sur la création du checkout.
+        if ($this->webhookSecret) {
+            $headers['webhook-key'] = $this->webhookSecret;
+        }
+
         Log::info('[FaykoPaymentService] Request', [
             'method' => $method,
             'url' => $url,
             'data' => $data,
         ]);
 
+        $options = $data === [] ? [] : ['json' => $data];
         $response = Http::withHeaders($headers)
             ->timeout(30)
-            ->send($method, $url, [
-                'json' => $data,
-            ]);
+            ->send($method, $url, $options);
 
         if ($response->failed()) {
             Log::error('[FaykoPaymentService] API Error', [
@@ -122,7 +126,6 @@ class FaykoPaymentService
             'ccphone' => $payload['ccphone'] ?? '+221',
             'phone' => $payload['phone'] ?? '',
             'email' => $payload['email'] ?? null,
-            'webhook_secret' => $this->webhookSecret,
             'extra_data' => is_array($payload['extra_data'] ?? null)
                 ? json_encode($payload['extra_data'], JSON_UNESCAPED_UNICODE)
                 : ($payload['extra_data'] ?? null),
@@ -233,7 +236,16 @@ class FaykoPaymentService
     {
         $url = rtrim($this->baseUrl, '/') . '/checkouts/providers';
         $res = Http::acceptJson()->timeout(15)->get($url);
-        return $res->json('data.providers') ?? [];
+        $providers = $res->json('data.providers') ?? [];
+
+        return array_map(static fn (array $provider): array => [
+            'id' => $provider['provider'] ?? $provider['id'] ?? '',
+            'name' => $provider['provider_name'] ?? $provider['name'] ?? '',
+            'logo' => $provider['provider_logo'] ?? $provider['logo'] ?? null,
+            'country' => $provider['country'] ?? [],
+            'checkout_status' => (bool) ($provider['checkout_status'] ?? false),
+            'payout_status' => (bool) ($provider['payout_status'] ?? false),
+        ], array_values(array_filter($providers, 'is_array')));
     }
 
     /**
@@ -242,7 +254,20 @@ class FaykoPaymentService
     public function getPayoutProviders(): array
     {
         $url = rtrim($this->baseUrl, '/') . '/payouts/providers';
-        $res = Http::acceptJson()->timeout(15)->get($url);
-        return $res->json('data.providers') ?? [];
+        $res = Http::withHeaders([
+            'public-key' => $this->publicKey,
+            'secret-key' => $this->secretKey,
+            'Accept' => 'application/json',
+        ])->timeout(15)->get($url);
+        $providers = $res->json('data.providers') ?? [];
+
+        return array_map(static fn (array $provider): array => [
+            'id' => $provider['provider'] ?? $provider['id'] ?? '',
+            'name' => $provider['provider_name'] ?? $provider['name'] ?? '',
+            'logo' => $provider['provider_logo'] ?? $provider['logo'] ?? null,
+            'country' => $provider['country'] ?? [],
+            'checkout_status' => (bool) ($provider['checkout_status'] ?? false),
+            'payout_status' => (bool) ($provider['payout_status'] ?? false),
+        ], array_values(array_filter($providers, 'is_array')));
     }
 }

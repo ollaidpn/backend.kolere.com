@@ -23,11 +23,16 @@ class ShopPayment extends Model
         'paid_by',
         'status',
         'gateway_reference',
+        'auto_payout_status',
+        'auto_payout_reference',
+        'auto_payout_payload',
+        'auto_payout_error',
     ];
 
     protected $casts = [
         'amount' => 'decimal:2',
         'client_infos' => 'array',
+        'auto_payout_payload' => 'array',
     ];
 
     protected $searchableFields = ['*'];

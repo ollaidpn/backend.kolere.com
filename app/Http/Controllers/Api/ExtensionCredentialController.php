@@ -480,7 +480,9 @@ class ExtensionCredentialController extends Controller
         }
 
         $meditectService = app(\App\Services\MeditectService::class);
-        $result = $meditectService->startMeditectImportSession($entityId, true);
+        // La récupération et le filtrage du catalogue sont traités par le cron.
+        // L'endpoint HTTP doit répondre immédiatement, même avec plusieurs rayons.
+        $result = $meditectService->queueMeditectImportSession($entityId);
 
         return response()->json($result, $result['success'] ? 200 : 400);
     }
