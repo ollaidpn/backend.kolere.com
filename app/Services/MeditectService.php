@@ -2115,7 +2115,7 @@ class MeditectService
     }
 
     /**
-     * Enrichir un lot de produits Meditect non encore enrichis (is_enriched = false).
+     * Enrichir un lot de produits Meditect incomplets ou non encore enrichis.
      */
     public function enrichPendingMeditectItems(int $batchSize = 30, bool $force = false, ?callable $logger = null): array
     {
@@ -2129,7 +2129,11 @@ class MeditectService
             })
             ->where(function ($q) {
                 $q->where('is_enriched', false)
-                  ->orWhere('needs_enrich_update', true);
+                  ->orWhere('needs_enrich_update', true)
+                  // Certains articles ont été marqués enrichis avant que
+                  // leurs données de référentiel soient effectivement sauvées.
+                  ->orWhereNull('category_id')
+                  ->orWhereNull('brand_id');
             });
         } else {
             $query->where(function ($q) {
